@@ -15,6 +15,16 @@
           "predictMovement": true,
           "predictionLead": 0.12,
           "action": "SetTargetLock"
+        },
+        {
+          "id": "player_tracker",
+          "name": "Rastreo de Posición y Distancia",
+          "type": "target_tracker",
+          "enabled": false,
+          "selectedPlayer": "",
+          "showDistance": true,
+          "showPosition": true,
+          "action": "SetPlayerTracker"
         }
       ]
     },

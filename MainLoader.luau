@@ -33,6 +33,12 @@ local VortexHub = {
     PredictionLead = 0.12,
     Commands = {},
     
+    -- Player Tracker State
+    TrackerEnabled = false,
+    TrackedPlayer = nil,
+    TrackedData = { Distance = 0, Position = Vector3.zero, Health = 100 },
+    TrackerBillboard = nil,
+
     -- UI State
     AccentColor = Color3.fromRGB(138, 43, 226), -- Purple por defecto
     ThemeElements = {},
@@ -87,7 +93,97 @@ local function HookMouseAim()
 end
 
 --------------------------------------------------------------------------------
--- 2. REGISTRO ESTRUCTURAL DE COMANDOS
+-- 2. MÓDULO PLAYER TRACKER (Rastreo de Distancia, Posición y ESP)
+--------------------------------------------------------------------------------
+local function ClearTrackerMarker()
+    if VortexHub.TrackerBillboard then
+        VortexHub.TrackerBillboard:Destroy()
+        VortexHub.TrackerBillboard = nil
+    end
+end
+
+local function CreateTrackerMarker(targetPlayer)
+    ClearTrackerMarker()
+    if not targetPlayer or not targetPlayer.Character then return end
+
+    local head = targetPlayer.Character:FindFirstChild("Head") or targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not head then return end
+
+    local billboard = Instance.new("BillboardGui")
+    billboard.Name = "VortexTrackerTag"
+    billboard.Adornee = head
+    billboard.Size = UDim2.new(0, 170, 0, 42)
+    billboard.StudsOffset = Vector3.new(0, 2.8, 0)
+    billboard.AlwaysOnTop = true
+
+    local label = Instance.new("TextLabel")
+    label.Name = "TrackerText"
+    label.Size = UDim2.new(1, 0, 1, 0)
+    label.BackgroundTransparency = 0.4
+    label.BackgroundColor3 = Color3.fromRGB(15, 12, 28)
+    label.TextColor3 = Color3.fromRGB(0, 240, 255)
+    label.TextSize = 13
+    label.Font = Enum.Font.GothamBold
+    label.RichText = true
+    label.Text = targetPlayer.DisplayName
+    label.Parent = billboard
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 6)
+    corner.Parent = label
+
+    local stroke = Instance.new("UIStroke")
+    stroke.Thickness = 1.5
+    stroke.Color = VortexHub.AccentColor
+    stroke.Parent = label
+    table.insert(VortexHub.ThemeElements, stroke)
+
+    billboard.Parent = head
+    VortexHub.TrackerBillboard = billboard
+end
+
+local function UpdatePlayerTracker()
+    if not VortexHub.TrackerEnabled or not VortexHub.TrackedPlayer or not VortexHub.TrackedPlayer.Character then
+        ClearTrackerMarker()
+        return
+    end
+
+    local myChar = LocalPlayer.Character
+    local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+    local targetChar = VortexHub.TrackedPlayer.Character
+    local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
+    local targetHumanoid = targetChar:FindFirstChildOfClass("Humanoid")
+
+    if not targetRoot or not myRoot then return end
+
+    local rawDistance = (targetRoot.Position - myRoot.Position).Magnitude
+    local distanceMeters = math.floor(rawDistance * 0.28)
+    local targetPos = targetRoot.Position
+    local health = targetHumanoid and math.floor((targetHumanoid.Health / targetHumanoid.MaxHealth) * 100) or 0
+
+    VortexHub.TrackedData = {
+        Studs = math.floor(rawDistance),
+        Meters = distanceMeters,
+        Position = targetPos,
+        Health = health
+    }
+
+    if VortexHub.TrackerBillboard and VortexHub.TrackerBillboard:FindFirstChild("TrackerText") then
+        VortexHub.TrackerBillboard.TrackerText.Text = string.format(
+            "🎯 <b>%s</b><br/><font color='#00FF66'>%dm (%dsts)</font> | HP: %d%%",
+            VortexHub.TrackedPlayer.DisplayName, distanceMeters, math.floor(rawDistance), health
+        )
+    end
+end
+
+Services.RunService.Heartbeat:Connect(function()
+    if VortexHub.TrackerEnabled then
+        UpdatePlayerTracker()
+    end
+end)
+
+--------------------------------------------------------------------------------
+-- 3. REGISTRO ESTRUCTURAL DE COMANDOS
 --------------------------------------------------------------------------------
 
 VortexHub.Commands["target_lock"] = function(args)
@@ -110,6 +206,31 @@ VortexHub.Commands["target_lock"] = function(args)
             end
         else
             VortexHub.ActiveTarget = nil
+        end
+    end
+end
+
+VortexHub.Commands["player_tracker"] = function(args)
+    if typeof(args) == "table" then
+        if args.enabled ~= nil then VortexHub.TrackerEnabled = args.enabled end
+        if args.targetPlayer and args.targetPlayer ~= "" then
+            local found = nil
+            for _, player in ipairs(Services.Players:GetPlayers()) do
+                if player ~= LocalPlayer and (player.Name:lower() == args.targetPlayer:lower() or player.DisplayName:lower() == args.targetPlayer:lower()) then
+                    found = player
+                    break
+                end
+            end
+            VortexHub.TrackedPlayer = found
+            if found and args.enabled ~= false then
+                VortexHub.TrackerEnabled = true
+                CreateTrackerMarker(found)
+                print("[VortexHub] Rastreo activado para:", found.Name)
+            end
+        else
+            VortexHub.TrackedPlayer = nil
+            VortexHub.TrackerEnabled = false
+            ClearTrackerMarker()
         end
     end
 end
@@ -164,7 +285,7 @@ function VortexHub:RunCommand(commandId, payload)
 end
 
 --------------------------------------------------------------------------------
--- 3. INTERFAZ MÓVIL Y SISTEMA DE TEMAS (LANDSCAPE 75% ANCHO)
+-- 4. INTERFAZ MÓVIL Y SISTEMA DE TEMAS (LANDSCAPE 75% ANCHO)
 --------------------------------------------------------------------------------
 
 function VortexHub:SetAccentColor(color)
@@ -232,7 +353,7 @@ function VortexHub:BuildUI()
     screen.DisplayOrder = 999
     screen.Parent = parentGui
 
-    -- Botón Flotante Draggable (Vortex Icon)
+    -- Botón Flotante Draggable
     local toggleBtn = Instance.new("TextButton")
     toggleBtn.Name = "VortexToggleButton"
     toggleBtn.Size = UDim2.new(0, 52, 0, 52)
@@ -255,7 +376,7 @@ function VortexHub:BuildUI()
 
     MakeDraggable(toggleBtn)
 
-    -- Frame Principal (Landscape - 75% Ancho, Centrado)
+    -- Frame Principal (Landscape - 75% Ancho)
     local mainFrame = Instance.new("Frame")
     mainFrame.Name = "VortexMainFrame"
     mainFrame.Size = UDim2.new(0.75, 0, 0.78, 0)
@@ -302,7 +423,7 @@ function VortexHub:BuildUI()
     title.TextXAlignment = Enum.TextXAlignment.Left
     title.Parent = header
 
-    -- Palette Theme Selector (Custom Accent Color)
+    -- Palette Theme Selector
     local themeContainer = Instance.new("Frame")
     themeContainer.Size = UDim2.new(0, 160, 0, 30)
     themeContainer.Position = UDim2.new(1, -210, 0.5, -15)
@@ -349,7 +470,7 @@ function VortexHub:BuildUI()
 end
 
 --------------------------------------------------------------------------------
--- 4. INICIALIZACIÓN
+-- 5. INICIALIZACIÓN
 --------------------------------------------------------------------------------
 
 HookMouseAim()
@@ -360,5 +481,5 @@ if getgenv then
     getgenv().VortexHub = VortexHub
 end
 
-print("[VortexHub] Ejecutado exitosamente con UI Móvil Landscape.")
+print("[VortexHub] Ejecutado exitosamente con PlayerTracker y UI Móvil Landscape.")
 return VortexHub
