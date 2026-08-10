@@ -1,14 +1,13 @@
 --[[
-    VortexUI.luau - Sistema de Interfaz de Usuario para VortexHub (Mobile Landscape)
-    - Botón flotante arrastrable
-    - Dashboard central (75% ancho de pantalla)
-    - Accent Colors personalizables dinámicamente
+    VortexUI.luau - Interfaz Móvil de VortexHub con Botón Draggable y Logo "Orbital V"
+    Basado en el diseño visual de VortexHub.
 --]]
 
 local Services = {
     TweenService = game:GetService("TweenService"),
     UserInputService = game:GetService("UserInputService"),
     Players = game:GetService("Players"),
+    RunService = game:GetService("RunService"),
     CoreGui = game:GetService("CoreGui")
 }
 
@@ -19,11 +18,12 @@ local VortexUI = {
     ScreenGui = nil,
     MainFrame = nil,
     ToggleButton = nil,
-    ActiveCategory = "combat",
-    AccentColor = Color3.fromRGB(138, 43, 226), -- Purple por defecto
-    ThemeElements = {}, -- UIStrokes, Highlights para actualización dinámica de tema
+    AccentColor = Color3.fromRGB(138, 43, 226),
+    ThemeElements = {},
     
-    -- Temas de Color Disponibles
+    -- URL / Asset ID del Logo Oficial "V Orbital"
+    LogoAsset = "https://raw.githubusercontent.com/MasterPiddy/VortexHub/main/assets/vortex_logo.png",
+    
     Themes = {
         Purple = Color3.fromRGB(138, 43, 226),
         Cyan = Color3.fromRGB(0, 240, 255),
@@ -33,7 +33,6 @@ local VortexUI = {
     }
 }
 
--- Cambiar el Accent Color de toda la interfaz
 function VortexUI:SetAccentColor(color)
     self.AccentColor = color
     for _, item in ipairs(self.ThemeElements) do
@@ -43,15 +42,10 @@ function VortexUI:SetAccentColor(color)
             if item:GetAttribute("IsThemeAccent") then
                 item.TextColor3 = color
             end
-        elseif item:IsA("Frame") or item:IsA("ImageLabel") then
-            if item:GetAttribute("IsThemeAccentBG") then
-                item.BackgroundColor3 = color
-            end
         end
     end
 end
 
--- Hacer cualquier Frame arrastrable por Touch / Mouse
 local function MakeDraggable(guiObject, handleObject)
     handleObject = handleObject or guiObject
     local dragging = false
@@ -90,11 +84,9 @@ local function MakeDraggable(guiObject, handleObject)
     end)
 end
 
--- Inicializar y construir la UI
-function VortexUI:Build(coreInstance)
-    local parentGui = (RunService:IsStudio() and PlayerGui) or Services.CoreGui
+function VortexUI:Build()
+    local parentGui = (Services.RunService:IsStudio() and PlayerGui) or Services.CoreGui
 
-    -- Destruir instancia previa si existe
     if parentGui:FindFirstChild("VortexHubScreenGui") then
         parentGui.VortexHubScreenGui:Destroy()
     end
@@ -108,46 +100,67 @@ function VortexUI:Build(coreInstance)
     self.ScreenGui = screen
 
     ----------------------------------------------------------------------------
-    -- 1. BOTÓN FLOTANTE (DRAGGABLE)
+    -- 1. BOTÓN FLOTANTE DRAGGABLE CON LOGO ORBITAL Y ANILLO GRADIENTE NEÓN
     ----------------------------------------------------------------------------
-    local toggleBtn = Instance.new("TextButton")
-    toggleBtn.Name = "VortexToggleButton"
-    toggleBtn.Size = UDim2.new(0, 52, 0, 52)
+    local toggleBtn = Instance.new("ImageButton")
+    toggleBtn.Name = "VortexLogoButton"
+    toggleBtn.Size = UDim2.new(0, 58, 0, 58)
     toggleBtn.Position = UDim2.new(0, 20, 0.3, 0)
     toggleBtn.BackgroundColor3 = Color3.fromRGB(15, 12, 28)
     toggleBtn.BackgroundTransparency = 0.15
-    toggleBtn.Text = "🌀"
-    toggleBtn.TextSize = 26
+    toggleBtn.Image = self.LogoAsset
+    toggleBtn.ScaleType = Enum.ScaleType.Fit
     toggleBtn.Parent = screen
 
     local btnCorner = Instance.new("UICorner")
     btnCorner.CornerRadius = UDim.new(1, 0)
     btnCorner.Parent = toggleBtn
 
+    -- Anillo de borde gradiente (Cyan -> Purple -> Crimson Pink)
     local btnStroke = Instance.new("UIStroke")
-    btnStroke.Thickness = 2
-    btnStroke.Color = self.AccentColor
+    btnStroke.Thickness = 2.5
+    btnStroke.Color = Color3.fromRGB(255, 255, 255)
     btnStroke.Parent = toggleBtn
-    table.insert(self.ThemeElements, btnStroke)
+
+    local strokeGradient = Instance.new("UIGradient")
+    strokeGradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(0, 240, 255)),
+        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(168, 85, 247)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 36, 0))
+    })
+    strokeGradient.Rotation = 45
+    strokeGradient.Parent = btnStroke
+
+    -- Icono de texto V estilizado de respaldo (si la imagen falla en cargar)
+    local fallbackText = Instance.new("TextLabel")
+    fallbackText.Size = UDim2.new(1, 0, 1, 0)
+    fallbackText.BackgroundTransparency = 1
+    fallbackText.Text = "<b>V</b>"
+    fallbackText.RichText = true
+    fallbackText.Font = Enum.Font.GothamBlack
+    fallbackText.TextSize = 28
+    fallbackText.TextColor3 = Color3.fromRGB(224, 176, 255)
+    fallbackText.ZIndex = 0
+    fallbackText.Parent = toggleBtn
 
     MakeDraggable(toggleBtn)
     self.ToggleButton = toggleBtn
 
     ----------------------------------------------------------------------------
-    -- 2. DASHBOARD PRINCIPAL (75% Ancho - Landscape Centrado)
+    -- 2. DASHBOARD PRINCIPAL (75% ANCHO, CENTRADO LANDSCAPE)
     ----------------------------------------------------------------------------
     local mainFrame = Instance.new("Frame")
     mainFrame.Name = "VortexMainFrame"
-    mainFrame.Size = UDim2.new(0.75, 0, 0.8, 0)
+    mainFrame.Size = UDim2.new(0.75, 0, 0.78, 0)
     mainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
     mainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
     mainFrame.BackgroundColor3 = Color3.fromRGB(15, 12, 28)
-    mainFrame.BackgroundTransparency = 0.1
+    mainFrame.BackgroundTransparency = 0.12
     mainFrame.Visible = false
     mainFrame.Parent = screen
 
     local mainCorner = Instance.new("UICorner")
-    mainCorner.CornerRadius = UDim.new(0, 12)
+    mainCorner.CornerRadius = UDim.new(0, 14)
     mainCorner.Parent = mainFrame
 
     local mainStroke = Instance.new("UIStroke")
@@ -156,15 +169,12 @@ function VortexUI:Build(coreInstance)
     mainStroke.Parent = mainFrame
     table.insert(self.ThemeElements, mainStroke)
 
-    self.MainFrame = mainFrame
-
-    -- Toggle Visibilidad desde el botón flotante
     toggleBtn.MouseButton1Click:Connect(function()
         mainFrame.Visible = not mainFrame.Visible
     end)
 
     ----------------------------------------------------------------------------
-    -- 3. BARRA SUPERIOR (HEADER)
+    -- 3. BARRA SUPERIOR CON LOGO OFICIAL VORTEXHUB
     ----------------------------------------------------------------------------
     local header = Instance.new("Frame")
     header.Name = "Header"
@@ -173,104 +183,84 @@ function VortexUI:Build(coreInstance)
     header.Parent = mainFrame
 
     local headerCorner = Instance.new("UICorner")
-    headerCorner.CornerRadius = UDim.new(0, 12)
+    headerCorner.CornerRadius = UDim.new(0, 14)
     headerCorner.Parent = header
 
-    local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(0.4, 0, 1, 0)
-    title.Position = UDim2.new(0, 15, 0, 0)
-    title.BackgroundTransparency = 1
-    title.Text = "🌀 VORTEXHUB <font color='#A855F7'>v1.0</font>"
-    title.RichText = true
-    title.Font = Enum.Font.GothamBold
-    title.TextSize = 18
-    title.TextColor3 = Color3.fromRGB(255, 255, 255)
-    title.TextXAlignment = Enum.TextXAlignment.Left
-    title.Parent = header
+    -- Badge de Titulo y Logo
+    local titleContainer = Instance.new("Frame")
+    titleContainer.Size = UDim2.new(0, 210, 0, 32)
+    titleContainer.Position = UDim2.new(0, 10, 0.5, -16)
+    titleContainer.BackgroundColor3 = Color3.fromRGB(30, 24, 56)
+    titleContainer.Parent = header
 
-    -- Botón Cerrar
-    local closeBtn = Instance.new("TextButton")
-    closeBtn.Size = UDim2.new(0, 32, 0, 32)
-    closeBtn.Position = UDim2.new(1, -40, 0.5, -16)
-    closeBtn.BackgroundTransparency = 1
-    closeBtn.Text = "✕"
-    closeBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
-    closeBtn.TextSize = 20
-    closeBtn.Parent = header
-    closeBtn.MouseButton1Click:Connect(function()
-        mainFrame.Visible = false
-    end)
+    local titleCorner = Instance.new("UICorner")
+    titleCorner.CornerRadius = UDim.new(0, 8)
+    titleCorner.Parent = titleContainer
 
-    -- Selector de Accent Colors (Presets)
+    local headerLogo = Instance.new("ImageLabel")
+    headerLogo.Size = UDim2.new(0, 24, 0, 24)
+    headerLogo.Position = UDim2.new(0, 6, 0.5, -12)
+    headerLogo.BackgroundTransparency = 1
+    headerLogo.Image = self.LogoAsset
+    headerLogo.Parent = titleContainer
+
+    local titleText = Instance.new("TextLabel")
+    titleText.Size = UDim2.new(1, -36, 1, 0)
+    titleText.Position = UDim2.new(0, 34, 0, 0)
+    titleText.BackgroundTransparency = 1
+    titleText.Text = "<b>VORTEXHUB</b>"
+    titleText.RichText = true
+    titleText.Font = Enum.Font.GothamBold
+    titleText.TextSize = 16
+    titleText.TextColor3 = Color3.fromRGB(240, 200, 255)
+    titleText.TextXAlignment = Enum.TextXAlignment.Left
+    titleText.Parent = titleContainer
+
+    -- Presets de Color de Acento
     local themeContainer = Instance.new("Frame")
-    themeContainer.Size = UDim2.new(0, 150, 0, 30)
-    themeContainer.Position = UDim2.new(1, -200, 0.5, -15)
+    themeContainer.Size = UDim2.new(0, 160, 0, 30)
+    themeContainer.Position = UDim2.new(1, -210, 0.5, -15)
     themeContainer.BackgroundTransparency = 1
     themeContainer.Parent = header
 
     local themeLayout = Instance.new("UIListLayout")
     themeLayout.FillDirection = Enum.FillDirection.Horizontal
     themeLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
+    themeLayout.VerticalAlignment = Enum.VerticalAlignment.Center
     themeLayout.Padding = UDim.new(0, 6)
     themeLayout.Parent = themeContainer
 
     for themeName, color in pairs(self.Themes) do
-        local colorDot = Instance.new("TextButton")
-        colorDot.Size = UDim2.new(0, 20, 0, 20)
-        colorDot.BackgroundColor3 = color
-        colorDot.Text = ""
-        colorDot.Parent = themeContainer
+        local dot = Instance.new("TextButton")
+        dot.Size = UDim2.new(0, 18, 0, 18)
+        dot.BackgroundColor3 = color
+        dot.Text = ""
+        dot.Parent = themeContainer
         
         local dotCorner = Instance.new("UICorner")
         dotCorner.CornerRadius = UDim.new(1, 0)
-        dotCorner.Parent = colorDot
+        dotCorner.Parent = dot
 
-        colorDot.MouseButton1Click:Connect(function()
+        dot.MouseButton1Click:Connect(function()
             self:SetAccentColor(color)
         end)
     end
 
-    ----------------------------------------------------------------------------
-    -- 4. SIDEBAR LATERAL (CATEGORÍAS)
-    ----------------------------------------------------------------------------
-    local sidebar = Instance.new("Frame")
-    sidebar.Name = "Sidebar"
-    sidebar.Size = UDim2.new(0.25, 0, 1, -45)
-    sidebar.Position = UDim2.new(0, 0, 0, 45)
-    sidebar.BackgroundColor3 = Color3.fromRGB(18, 14, 34)
-    sidebar.Parent = mainFrame
+    -- Botón de Cierre
+    local closeBtn = Instance.new("TextButton")
+    closeBtn.Size = UDim2.new(0, 30, 0, 30)
+    closeBtn.Position = UDim2.new(1, -38, 0.5, -15)
+    closeBtn.BackgroundTransparency = 1
+    closeBtn.Text = "✕"
+    closeBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
+    closeBtn.TextSize = 18
+    closeBtn.Parent = header
+    closeBtn.MouseButton1Click:Connect(function()
+        mainFrame.Visible = false
+    end)
 
-    local sidebarLayout = Instance.new("UIListLayout")
-    sidebarLayout.Padding = UDim.new(0, 8)
-    sidebarLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-    sidebarLayout.Parent = sidebar
-
-    local sidePadding = Instance.new("UIPadding")
-    sidePadding.PaddingTop = UDim.new(0, 12)
-    sidePadding.Parent = sidebar
-
-    local categories = {
-        { id = "combat", name = "🎯 Combate" },
-        { id = "player", name = "👤 Jugador" },
-        { id = "world", name = "🌐 Mundo" }
-    }
-
-    for _, cat in ipairs(categories) do
-        local catBtn = Instance.new("TextButton")
-        catBtn.Size = UDim2.new(0.88, 0, 0, 40)
-        catBtn.BackgroundColor3 = Color3.fromRGB(28, 22, 52)
-        catBtn.Text = cat.name
-        catBtn.Font = Enum.Font.GothamMedium
-        catBtn.TextSize = 14
-        catBtn.TextColor3 = Color3.fromRGB(230, 230, 230)
-        catBtn.Parent = sidebar
-
-        local catCorner = Instance.new("UICorner")
-        catCorner.CornerRadius = UDim.new(0, 8)
-        catCorner.Parent = catBtn
-    end
-
-    print("[VortexUI] UI Móvil construida con éxito.")
+    MakeDraggable(mainFrame, header)
+    print("[VortexUI] UI actualizada con Logo oficial Orbital V.")
 end
 
 return VortexUI

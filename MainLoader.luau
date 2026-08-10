@@ -39,6 +39,9 @@ local VortexHub = {
     TrackedData = { Distance = 0, Position = Vector3.zero, Health = 100 },
     TrackerBillboard = nil,
 
+    -- Official Logo Asset
+    LogoAsset = "https://raw.githubusercontent.com/MasterPiddy/VortexHub/main/assets/vortex_logo.png",
+
     -- UI State
     AccentColor = Color3.fromRGB(138, 43, 226), -- Purple por defecto
     ThemeElements = {},
@@ -285,7 +288,7 @@ function VortexHub:RunCommand(commandId, payload)
 end
 
 --------------------------------------------------------------------------------
--- 4. INTERFAZ MÓVIL Y SISTEMA DE TEMAS (LANDSCAPE 75% ANCHO)
+-- 4. INTERFAZ MÓVIL Y SISTEMA DE TEMAS (LANDSCAPE 75% ANCHO + LOGO ORBITAL V)
 --------------------------------------------------------------------------------
 
 function VortexHub:SetAccentColor(color)
@@ -353,15 +356,15 @@ function VortexHub:BuildUI()
     screen.DisplayOrder = 999
     screen.Parent = parentGui
 
-    -- Botón Flotante Draggable
-    local toggleBtn = Instance.new("TextButton")
-    toggleBtn.Name = "VortexToggleButton"
-    toggleBtn.Size = UDim2.new(0, 52, 0, 52)
+    -- Botón Flotante Draggable con Logo Orbital V y Anillo Gradiente
+    local toggleBtn = Instance.new("ImageButton")
+    toggleBtn.Name = "VortexLogoButton"
+    toggleBtn.Size = UDim2.new(0, 58, 0, 58)
     toggleBtn.Position = UDim2.new(0, 25, 0.25, 0)
     toggleBtn.BackgroundColor3 = Color3.fromRGB(15, 12, 28)
     toggleBtn.BackgroundTransparency = 0.15
-    toggleBtn.Text = "🌀"
-    toggleBtn.TextSize = 26
+    toggleBtn.Image = self.LogoAsset
+    toggleBtn.ScaleType = Enum.ScaleType.Fit
     toggleBtn.Parent = screen
 
     local btnCorner = Instance.new("UICorner")
@@ -369,10 +372,18 @@ function VortexHub:BuildUI()
     btnCorner.Parent = toggleBtn
 
     local btnStroke = Instance.new("UIStroke")
-    btnStroke.Thickness = 2
-    btnStroke.Color = self.AccentColor
+    btnStroke.Thickness = 2.5
+    btnStroke.Color = Color3.fromRGB(255, 255, 255)
     btnStroke.Parent = toggleBtn
-    table.insert(self.ThemeElements, btnStroke)
+
+    local strokeGradient = Instance.new("UIGradient")
+    strokeGradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(0, 240, 255)),
+        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(168, 85, 247)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 36, 0))
+    })
+    strokeGradient.Rotation = 45
+    strokeGradient.Parent = btnStroke
 
     MakeDraggable(toggleBtn)
 
@@ -401,9 +412,9 @@ function VortexHub:BuildUI()
         mainFrame.Visible = not mainFrame.Visible
     end)
 
-    -- Header Bar
+    -- Header Bar con Badge del Logo Orbital V
     local header = Instance.new("Frame")
-    header.Size = UDim2.new(1, 0, 0, 42)
+    header.Size = UDim2.new(1, 0, 0, 45)
     header.BackgroundColor3 = Color3.fromRGB(22, 18, 42)
     header.Parent = mainFrame
 
@@ -411,17 +422,34 @@ function VortexHub:BuildUI()
     headerCorner.CornerRadius = UDim.new(0, 14)
     headerCorner.Parent = header
 
-    local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(0.4, 0, 1, 0)
-    title.Position = UDim2.new(0, 15, 0, 0)
-    title.BackgroundTransparency = 1
-    title.Text = "🌀 VORTEXHUB <font color='#A855F7'>v1.0</font>"
-    title.RichText = true
-    title.Font = Enum.Font.GothamBold
-    title.TextSize = 17
-    title.TextColor3 = Color3.fromRGB(255, 255, 255)
-    title.TextXAlignment = Enum.TextXAlignment.Left
-    title.Parent = header
+    local titleContainer = Instance.new("Frame")
+    titleContainer.Size = UDim2.new(0, 210, 0, 32)
+    titleContainer.Position = UDim2.new(0, 10, 0.5, -16)
+    titleContainer.BackgroundColor3 = Color3.fromRGB(30, 24, 56)
+    titleContainer.Parent = header
+
+    local titleCorner = Instance.new("UICorner")
+    titleCorner.CornerRadius = UDim.new(0, 8)
+    titleCorner.Parent = titleContainer
+
+    local headerLogo = Instance.new("ImageLabel")
+    headerLogo.Size = UDim2.new(0, 24, 0, 24)
+    headerLogo.Position = UDim2.new(0, 6, 0.5, -12)
+    headerLogo.BackgroundTransparency = 1
+    headerLogo.Image = self.LogoAsset
+    headerLogo.Parent = titleContainer
+
+    local titleText = Instance.new("TextLabel")
+    titleText.Size = UDim2.new(1, -36, 1, 0)
+    titleText.Position = UDim2.new(0, 34, 0, 0)
+    titleText.BackgroundTransparency = 1
+    titleText.Text = "<b>VORTEXHUB</b>"
+    titleText.RichText = true
+    titleText.Font = Enum.Font.GothamBold
+    titleText.TextSize = 16
+    titleText.TextColor3 = Color3.fromRGB(240, 200, 255)
+    titleText.TextXAlignment = Enum.TextXAlignment.Left
+    titleText.Parent = titleContainer
 
     -- Palette Theme Selector
     local themeContainer = Instance.new("Frame")
@@ -481,5 +509,5 @@ if getgenv then
     getgenv().VortexHub = VortexHub
 end
 
-print("[VortexHub] Ejecutado exitosamente con PlayerTracker y UI Móvil Landscape.")
+print("[VortexHub] Ejecutado exitosamente con Logo Oficial Orbital V.")
 return VortexHub
