@@ -1,5 +1,5 @@
 --[[
-    VortexHub MainLoader.luau - Standalone Ultra-Compatible
+    VortexHub MainLoader.luau - Motor Universal con Auto-Aim para Jugadores & NPCs
     Ejecutable mediante:
     loadstring(game:HttpGet("https://raw.githubusercontent.com/MasterPiddy/VortexHub/main/MainLoader.luau"))()
 --]]
@@ -13,13 +13,13 @@ local Services = {
     HttpService = game:GetService("HttpService"),
     TweenService = game:GetService("TweenService"),
     UserInputService = game:GetService("UserInputService"),
-    CoreGui = game:GetService("CoreGui")
+    CoreGui = game:GetService("CoreGui"),
+    Workspace = game:GetService("Workspace")
 }
 
 local LocalPlayer = Services.Players.LocalPlayer
 local Mouse = LocalPlayer:GetMouse()
 
--- Limpieza de UI previa si existe
 local function CleanOldUI()
     local oldGuis = {
         LocalPlayer:FindFirstChild("PlayerGui") and LocalPlayer.PlayerGui:FindFirstChild("VortexHubScreenGui"),
@@ -38,10 +38,16 @@ CleanOldUI()
 local VortexHub = {
     Version = "1.0.0",
     Config = {},
-    ActiveTarget = nil,
+    
+    -- Target Lock State & Filters
     TargetLockEnabled = false,
+    TargetPlayers = true,
+    TargetNPCs = true,
+    TargetMode = "NearestDistance", -- "NearestDistance", "NearestCursor", "Manual"
+    ActiveTarget = nil,
     PredictMovement = true,
     PredictionLead = 0.12,
+    
     Commands = {},
     
     -- Player Tracker State
@@ -54,7 +60,7 @@ local VortexHub = {
     LogoAsset = "https://raw.githubusercontent.com/MasterPiddy/VortexHub/main/assets/vortex_logo.png",
 
     -- UI State
-    AccentColor = Color3.fromRGB(138, 43, 226), -- Purple por defecto
+    AccentColor = Color3.fromRGB(138, 43, 226),
     ThemeElements = {},
     Themes = {
         Purple = Color3.fromRGB(138, 43, 226),
@@ -66,42 +72,190 @@ local VortexHub = {
 }
 
 --------------------------------------------------------------------------------
--- 1. MÓDULO TARGET LOCK (Sin seguimiento de cámara)
+-- 1. MOTOR UNIVERSAL TARGET LOCK (JUGADORES & NPCS + HOOKS DE ATAQUES)
 --------------------------------------------------------------------------------
+
+local function IsValidNPC(model)
+    if not model or not model:IsA("Model") then return false end
+    if Services.Players:GetPlayerFromCharacter(model) then return false end
+    local hum = model:FindFirstChildOfClass("Humanoid")
+    local root = model:FindFirstChild("HumanoidRootPart") or model:FindFirstChild("Torso") or model.PrimaryPart
+    return (hum and root and hum.Health > 0)
+end
+
+local function GetValidTargets()
+    local targets = {}
+    local myChar = LocalPlayer.Character
+
+    if VortexHub.TargetPlayers then
+        for _, player in ipairs(Services.Players:GetPlayers()) do
+            if player ~= LocalPlayer and player.Character then
+                local root = player.Character:FindFirstChild("HumanoidRootPart")
+                local hum = player.Character:FindFirstChildOfClass("Humanoid")
+                if root and hum and hum.Health > 0 then
+                    table.insert(targets, { Instance = player, Character = player.Character, Root = root, IsPlayer = true })
+                end
+            end
+        end
+    end
+
+    if VortexHub.TargetNPCs then
+        for _, obj in ipairs(Services.Workspace:GetDescendants()) do
+            if obj ~= myChar and IsValidNPC(obj) then
+                local root = obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChild("Torso") or obj.PrimaryPart
+                table.insert(targets, { Instance = obj, Character = obj, Root = root, IsPlayer = false })
+            end
+        end
+    end
+
+    return targets
+end
+
+local function GetNearestTargetByDistance()
+    local myChar = LocalPlayer.Character
+    local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+    if not myRoot then return nil end
+
+    local targets = GetValidTargets()
+    local closest = nil
+    local shortestDistance = math.huge
+
+    for _, t in ipairs(targets) do
+        local dist = (t.Root.Position - myRoot.Position).Magnitude
+        if dist < shortestDistance then
+            shortestDistance = dist
+            closest = t.Instance
+        end
+    end
+
+    return closest
+end
+
+local function GetNearestTargetByCursor()
+    local camera = Services.Workspace.CurrentCamera
+    if not camera then return nil end
+
+    local mousePos = Vector2.new(Mouse.X, Mouse.Y)
+    local targets = GetValidTargets()
+    local closest = nil
+    local shortestDistance = math.huge
+
+    for _, t in ipairs(targets) do
+        local screenPos, onScreen = camera:WorldToViewportPoint(t.Root.Position)
+        if onScreen then
+            local dist = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
+            if dist < shortestDistance then
+                shortestDistance = dist
+                closest = t.Instance
+            end
+        end
+    end
+
+    return closest
+end
+
+local function GetTargetRootPart(target)
+    if not target then return nil end
+    if typeof(target) == "Instance" then
+        if target:IsA("Player") and target.Character then
+            return target.Character:FindFirstChild("HumanoidRootPart")
+        elseif target:IsA("Model") then
+            return target:FindFirstChild("HumanoidRootPart") or target:FindFirstChild("Torso") or target.PrimaryPart
+        end
+    end
+    return nil
+end
+
 local function GetTargetPosition()
-    if not VortexHub.TargetLockEnabled or not VortexHub.ActiveTarget or not VortexHub.ActiveTarget.Character then
-        return nil
+    if not VortexHub.TargetLockEnabled then return nil end
+
+    if VortexHub.TargetMode == "NearestDistance" then
+        VortexHub.ActiveTarget = GetNearestTargetByDistance()
+    elseif VortexHub.TargetMode == "NearestCursor" then
+        VortexHub.ActiveTarget = GetNearestTargetByCursor()
     end
 
-    local char = VortexHub.ActiveTarget.Character
-    local root = char:FindFirstChild("HumanoidRootPart")
-    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    local targetRoot = GetTargetRootPart(VortexHub.ActiveTarget)
+    if not targetRoot then return nil end
 
-    if not root or not humanoid or humanoid.Health <= 0 then
-        return nil
-    end
-
-    local targetPos = root.Position
-    if VortexHub.PredictMovement and root:IsA("BasePart") then
-        targetPos = targetPos + (root.AssemblyLinearVelocity * VortexHub.PredictionLead)
+    local targetPos = targetRoot.Position
+    if VortexHub.PredictMovement and targetRoot:IsA("BasePart") then
+        targetPos = targetPos + (targetRoot.AssemblyLinearVelocity * VortexHub.PredictionLead)
     end
     return targetPos
 end
 
-local function HookMouseAim()
+-- Orientar automáticamente el personaje hacia el objetivo para asegurar ataques meelee/habilidades
+Services.RunService.RenderStepped:Connect(function()
+    if VortexHub.TargetLockEnabled then
+        local targetPos = GetTargetPosition()
+        local myChar = LocalPlayer.Character
+        local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+
+        if targetPos and myRoot then
+            local lookAt = Vector3.new(targetPos.X, myRoot.Position.Y, targetPos.Z)
+            myRoot.CFrame = CFrame.new(myRoot.Position, lookAt)
+        end
+    end
+end)
+
+local function HookCombatRedirection()
     pcall(function()
         local gmt = getrawmetatable(game)
         if setreadonly then setreadonly(gmt, false) end
         local oldIndex = gmt.__index
+        local oldNamecall = gmt.__namecall
 
         gmt.__index = newcclosure(function(selfInstance, key)
-            if selfInstance == Mouse and (key == "Hit" or key == "hit") then
-                local targetPos = GetTargetPosition()
-                if targetPos then
-                    return CFrame.new(targetPos)
+            if selfInstance == Mouse then
+                if key == "Hit" or key == "hit" then
+                    local targetPos = GetTargetPosition()
+                    if targetPos then
+                        return CFrame.new(targetPos)
+                    end
+                elseif key == "Target" or key == "target" then
+                    local targetRoot = GetTargetRootPart(VortexHub.ActiveTarget)
+                    if targetRoot then
+                        return targetRoot
+                    end
                 end
             end
             return oldIndex(selfInstance, key)
+        end)
+
+        gmt.__namecall = newcclosure(function(selfInstance, ...)
+            local method = getnamecallmethod()
+            local args = {...}
+
+            if VortexHub.TargetLockEnabled then
+                local targetPos = GetTargetPosition()
+                if targetPos then
+                    if method == "Raycast" or method == "raycast" or method == "FindPartOnRay" then
+                        local origin = args[1]
+                        if typeof(origin) == "Vector3" then
+                            args[2] = (targetPos - origin).Unit * 1000
+                            return oldNamecall(selfInstance, unpack(args))
+                        end
+                    end
+
+                    if method == "FireServer" or method == "fireServer" then
+                        for i, arg in ipairs(args) do
+                            if typeof(arg) == "CFrame" then
+                                args[i] = CFrame.new(arg.Position, targetPos)
+                            elseif typeof(arg) == "Vector3" and arg.Magnitude < 2 then
+                                local myChar = LocalPlayer.Character
+                                local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                                if myRoot then
+                                    args[i] = (targetPos - myRoot.Position).Unit
+                                end
+                            end
+                        end
+                        return oldNamecall(selfInstance, unpack(args))
+                    end
+                end
+            end
+
+            return oldNamecall(selfInstance, ...)
         end)
 
         if setreadonly then setreadonly(gmt, true) end
@@ -109,7 +263,7 @@ local function HookMouseAim()
 end
 
 --------------------------------------------------------------------------------
--- 2. MÓDULO PLAYER TRACKER (Etiqueta Compacta y Legible)
+-- 2. MÓDULO PLAYER TRACKER (Etiqueta Compacta Legible)
 --------------------------------------------------------------------------------
 local function ClearTrackerMarker()
     if VortexHub.TrackerBillboard then
@@ -125,7 +279,6 @@ local function CreateTrackerMarker(targetPlayer)
     local head = targetPlayer.Character:FindFirstChild("Head") or targetPlayer.Character:FindFirstChild("HumanoidRootPart")
     if not head then return end
 
-    -- BillboardGui compacto (135x24 px)
     local billboard = Instance.new("BillboardGui")
     billboard.Name = "VortexTrackerTag"
     billboard.Adornee = head
@@ -133,7 +286,6 @@ local function CreateTrackerMarker(targetPlayer)
     billboard.StudsOffset = Vector3.new(0, 2.2, 0)
     billboard.AlwaysOnTop = true
 
-    -- Frame contenedor oscuro
     local frame = Instance.new("Frame")
     frame.Name = "TrackerFrame"
     frame.Size = UDim2.new(1, 0, 1, 0)
@@ -145,7 +297,6 @@ local function CreateTrackerMarker(targetPlayer)
     corner.CornerRadius = UDim.new(0, 5)
     corner.Parent = frame
 
-    -- Borde de Frame (NO aplicado al texto para evitar bordes amarillos en las letras)
     local frameStroke = Instance.new("UIStroke")
     frameStroke.Thickness = 1
     frameStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
@@ -153,7 +304,6 @@ local function CreateTrackerMarker(targetPlayer)
     frameStroke.Parent = frame
     table.insert(VortexHub.ThemeElements, frameStroke)
 
-    -- Texto legible de alta nitidez
     local label = Instance.new("TextLabel")
     label.Name = "TrackerText"
     label.Size = UDim2.new(1, -6, 1, 0)
@@ -220,22 +370,10 @@ end)
 VortexHub.Commands["target_lock"] = function(args)
     if typeof(args) == "table" then
         if args.enabled ~= nil then VortexHub.TargetLockEnabled = args.enabled end
+        if args.targetPlayers ~= nil then VortexHub.TargetPlayers = args.targetPlayers end
+        if args.targetNPCs ~= nil then VortexHub.TargetNPCs = args.targetNPCs end
+        if args.targetMode then VortexHub.TargetMode = args.targetMode end
         if args.predictionLead then VortexHub.PredictionLead = tonumber(args.predictionLead) or 0.12 end
-        if args.targetPlayer and args.targetPlayer ~= "" then
-            local found = nil
-            for _, player in ipairs(Services.Players:GetPlayers()) do
-                if player ~= LocalPlayer and (player.Name:lower() == args.targetPlayer:lower() or player.DisplayName:lower() == args.targetPlayer:lower()) then
-                    found = player
-                    break
-                end
-            end
-            VortexHub.ActiveTarget = found
-            if found then
-                print("[VortexHub] Objetivo fijado:", found.Name)
-            end
-        else
-            VortexHub.ActiveTarget = nil
-        end
     end
 end
 
@@ -266,14 +404,12 @@ end
 function VortexHub:RunCommand(commandId, payload)
     local commandFunc = self.Commands[commandId]
     if commandFunc then
-        pcall(function()
-            commandFunc(payload)
-        end)
+        pcall(function() commandFunc(payload) end)
     end
 end
 
 --------------------------------------------------------------------------------
--- 4. INTERFAZ GRÁFICA MÓVIL (STANDALONE ULTRATOLERANTE)
+-- 4. INTERFAZ GRÁFICA MÓVIL (PANEL COMBAT COMPLETO CON FILTROS Y MODOS)
 --------------------------------------------------------------------------------
 
 function VortexHub:SetAccentColor(color)
@@ -350,94 +486,9 @@ function VortexHub:RenderCombatCategory(contentArea)
     padding.PaddingBottom = UDim.new(0, 10)
     padding.Parent = scroll
 
-    -- 1. SELECTOR DE JUGADOR
-    local targetCard = Instance.new("Frame")
-    targetCard.Size = UDim2.new(0.95, 0, 0, 110)
-    targetCard.BackgroundColor3 = Color3.fromRGB(22, 18, 42)
-    targetCard.Parent = scroll
-
-    local cardCorner = Instance.new("UICorner")
-    cardCorner.CornerRadius = UDim.new(0, 10)
-    cardCorner.Parent = targetCard
-
-    local cardStroke = Instance.new("UIStroke")
-    cardStroke.Thickness = 1.5
-    cardStroke.Color = Color3.fromRGB(45, 38, 80)
-    cardStroke.Parent = targetCard
-
-    local targetTitle = Instance.new("TextLabel")
-    targetTitle.Size = UDim2.new(1, -20, 0, 25)
-    targetTitle.Position = UDim2.new(0, 10, 0, 6)
-    targetTitle.BackgroundTransparency = 1
-    targetTitle.Text = "🎯 <b>SELECCIONAR JUGADOR OBJETIVO</b>"
-    targetTitle.RichText = true
-    targetTitle.Font = Enum.Font.GothamBold
-    targetTitle.TextSize = 14
-    targetTitle.TextColor3 = Color3.fromRGB(240, 200, 255)
-    targetTitle.TextXAlignment = Enum.TextXAlignment.Left
-    targetTitle.Parent = targetCard
-
-    local playerDropdown = Instance.new("TextButton")
-    playerDropdown.Size = UDim2.new(0.95, 0, 0, 36)
-    playerDropdown.Position = UDim2.new(0.025, 0, 0, 36)
-    playerDropdown.BackgroundColor3 = Color3.fromRGB(15, 12, 28)
-    playerDropdown.Text = "Toca para elegir jugador..."
-    playerDropdown.Font = Enum.Font.GothamMedium
-    playerDropdown.TextSize = 13
-    playerDropdown.TextColor3 = Color3.fromRGB(0, 240, 255)
-    playerDropdown.Parent = targetCard
-
-    local dropCorner = Instance.new("UICorner")
-    dropCorner.CornerRadius = UDim.new(0, 8)
-    dropCorner.Parent = playerDropdown
-
-    local selectedLabel = Instance.new("TextLabel")
-    selectedLabel.Size = UDim2.new(1, -20, 0, 20)
-    selectedLabel.Position = UDim2.new(0, 10, 0, 80)
-    selectedLabel.BackgroundTransparency = 1
-    selectedLabel.Text = "Objetivo activo: <font color='#00FF66'>Ninguno</font>"
-    selectedLabel.RichText = true
-    selectedLabel.Font = Enum.Font.Gotham
-    selectedLabel.TextSize = 12
-    selectedLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
-    selectedLabel.TextXAlignment = Enum.TextXAlignment.Left
-    selectedLabel.Parent = targetCard
-
-    playerDropdown.MouseButton1Click:Connect(function()
-        local players = Services.Players:GetPlayers()
-        local current = self.ActiveTarget and self.ActiveTarget.Name or ""
-        
-        local nextIndex = 1
-        for i, p in ipairs(players) do
-            if p ~= LocalPlayer and p.Name == current then
-                nextIndex = i + 1
-                break
-            end
-        end
-        
-        local chosen = nil
-        for i = nextIndex, nextIndex + #players do
-            local idx = ((i - 1) % #players) + 1
-            local candidate = players[idx]
-            if candidate ~= LocalPlayer then
-                chosen = candidate
-                break
-            end
-        end
-
-        if chosen then
-            playerDropdown.Text = "👤 " .. chosen.DisplayName .. " (@" .. chosen.Name .. ")"
-            selectedLabel.Text = "Objetivo activo: <font color='#00FF66'>" .. chosen.DisplayName .. "</font>"
-            self:RunCommand("target_lock", { targetPlayer = chosen.Name, enabled = self.TargetLockEnabled })
-            self:RunCommand("player_tracker", { targetPlayer = chosen.Name, enabled = self.TrackerEnabled })
-        else
-            playerDropdown.Text = "No hay jugadores disponibles"
-        end
-    end)
-
-    -- 2. CONTROL AUTO-AIM
+    -- 1. TARJETA CONTROL AUTO-AIM
     local aimCard = Instance.new("Frame")
-    aimCard.Size = UDim2.new(0.95, 0, 0, 90)
+    aimCard.Size = UDim2.new(0.95, 0, 0, 155)
     aimCard.BackgroundColor3 = Color3.fromRGB(22, 18, 42)
     aimCard.Parent = scroll
 
@@ -458,7 +509,7 @@ function VortexHub:RenderCombatCategory(contentArea)
     aimTitle.Parent = aimCard
 
     local aimToggle = Instance.new("TextButton")
-    aimToggle.Size = UDim2.new(0, 70, 0, 30)
+    aimToggle.Size = UDim2.new(0, 70, 0, 28)
     aimToggle.Position = UDim2.new(1, -82, 0, 8)
     aimToggle.BackgroundColor3 = self.TargetLockEnabled and Color3.fromRGB(0, 255, 102) or Color3.fromRGB(45, 38, 80)
     aimToggle.Text = self.TargetLockEnabled and "ON" or "OFF"
@@ -468,18 +519,96 @@ function VortexHub:RenderCombatCategory(contentArea)
     aimToggle.Parent = aimCard
 
     local aimToggleCorner = Instance.new("UICorner")
-    aimToggleCorner.CornerRadius = UDim.new(0, 15)
+    aimToggleCorner.CornerRadius = UDim.new(0, 14)
     aimToggleCorner.Parent = aimToggle
 
     aimToggle.MouseButton1Click:Connect(function()
-        local newState = not self.TargetLockEnabled
-        self:RunCommand("target_lock", { enabled = newState, targetPlayer = self.ActiveTarget and self.ActiveTarget.Name or "" })
-        aimToggle.BackgroundColor3 = newState and Color3.fromRGB(0, 255, 102) or Color3.fromRGB(45, 38, 80)
-        aimToggle.Text = newState and "ON" or "OFF"
-        aimToggle.TextColor3 = newState and Color3.fromRGB(15, 12, 28) or Color3.fromRGB(200, 200, 200)
+        self.TargetLockEnabled = not self.TargetLockEnabled
+        aimToggle.BackgroundColor3 = self.TargetLockEnabled and Color3.fromRGB(0, 255, 102) or Color3.fromRGB(45, 38, 80)
+        aimToggle.Text = self.TargetLockEnabled and "ON" or "OFF"
+        aimToggle.TextColor3 = self.TargetLockEnabled and Color3.fromRGB(15, 12, 28) or Color3.fromRGB(200, 200, 200)
     end)
 
-    -- 3. CONTROL PLAYER TRACKER
+    -- Filtros de Tipo de Objetivo (Jugadores / NPCs)
+    local filterLabel = Instance.new("TextLabel")
+    filterLabel.Size = UDim2.new(1, -24, 0, 20)
+    filterLabel.Position = UDim2.new(0, 12, 0, 42)
+    filterLabel.BackgroundTransparency = 1
+    filterLabel.Text = "Tipo de Objetivo Aceptado:"
+    filterLabel.Font = Enum.Font.GothamMedium
+    filterLabel.TextSize = 12
+    filterLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
+    filterLabel.TextXAlignment = Enum.TextXAlignment.Left
+    filterLabel.Parent = aimCard
+
+    -- Switch Jugadores
+    local playersToggle = Instance.new("TextButton")
+    playersToggle.Size = UDim2.new(0.44, 0, 0, 32)
+    playersToggle.Position = UDim2.new(0, 12, 0, 66)
+    playersToggle.BackgroundColor3 = self.TargetPlayers and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(30, 24, 56)
+    playersToggle.Text = "👥 Jugadores: " .. (self.TargetPlayers and "SI" or "NO")
+    playersToggle.Font = Enum.Font.GothamMedium
+    playersToggle.TextSize = 12
+    playersToggle.TextColor3 = Color3.fromRGB(240, 200, 255)
+    playersToggle.Parent = aimCard
+
+    local pCorner = Instance.new("UICorner")
+    pCorner.CornerRadius = UDim.new(0, 6)
+    pCorner.Parent = playersToggle
+
+    playersToggle.MouseButton1Click:Connect(function()
+        self.TargetPlayers = not self.TargetPlayers
+        playersToggle.BackgroundColor3 = self.TargetPlayers and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(30, 24, 56)
+        playersToggle.Text = "👥 Jugadores: " .. (self.TargetPlayers and "SI" or "NO")
+    end)
+
+    -- Switch NPCs / Mobs
+    local npcsToggle = Instance.new("TextButton")
+    npcsToggle.Size = UDim2.new(0.44, 0, 0, 32)
+    npcsToggle.Position = UDim2.new(0.51, 0, 0, 66)
+    npcsToggle.BackgroundColor3 = self.TargetNPCs and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(30, 24, 56)
+    npcsToggle.Text = "👾 NPCs / Mobs: " .. (self.TargetNPCs and "SI" or "NO")
+    npcsToggle.Font = Enum.Font.GothamMedium
+    npcsToggle.TextSize = 12
+    npcsToggle.TextColor3 = Color3.fromRGB(240, 200, 255)
+    npcsToggle.Parent = aimCard
+
+    local npcCorner = Instance.new("UICorner")
+    npcCorner.CornerRadius = UDim.new(0, 6)
+    npcCorner.Parent = npcsToggle
+
+    npcsToggle.MouseButton1Click:Connect(function()
+        self.TargetNPCs = not self.TargetNPCs
+        npcsToggle.BackgroundColor3 = self.TargetNPCs and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(30, 24, 56)
+        npcsToggle.Text = "👾 NPCs / Mobs: " .. (self.TargetNPCs and "SI" or "NO")
+    end)
+
+    -- Selector de Modo de Fijado (Más cercano / Cursor)
+    local modeBtn = Instance.new("TextButton")
+    modeBtn.Size = UDim2.new(0.95, -24, 0, 32)
+    modeBtn.Position = UDim2.new(0, 12, 0, 108)
+    modeBtn.BackgroundColor3 = Color3.fromRGB(15, 12, 28)
+    modeBtn.Text = "Modo: " .. (self.TargetMode == "NearestDistance" and "⚡ Objetivo Más Cercano (3D)" or "🎯 Cercano al Cursor")
+    modeBtn.Font = Enum.Font.GothamMedium
+    modeBtn.TextSize = 12
+    modeBtn.TextColor3 = Color3.fromRGB(0, 240, 255)
+    modeBtn.Parent = aimCard
+
+    local mCorner = Instance.new("UICorner")
+    mCorner.CornerRadius = UDim.new(0, 6)
+    mCorner.Parent = modeBtn
+
+    modeBtn.MouseButton1Click:Connect(function()
+        if self.TargetMode == "NearestDistance" then
+            self.TargetMode = "NearestCursor"
+            modeBtn.Text = "Modo: 🎯 Cercano al Cursor"
+        else
+            self.TargetMode = "NearestDistance"
+            modeBtn.Text = "Modo: ⚡ Objetivo Más Cercano (3D)"
+        end
+    end)
+
+    -- 2. TARJETA RASTREADOR DE JUGADOR (PLAYER TRACKER)
     local trackerCard = Instance.new("Frame")
     trackerCard.Size = UDim2.new(0.95, 0, 0, 125)
     trackerCard.BackgroundColor3 = Color3.fromRGB(22, 18, 42)
@@ -490,19 +619,19 @@ function VortexHub:RenderCombatCategory(contentArea)
     trackCorner.Parent = trackerCard
 
     local trackTitle = Instance.new("TextLabel")
-    trackTitle.Size = UDim2.new(0.6, 0, 0, 30)
+    trackTitle.Size = UDim2.new(0, 200, 0, 30)
     trackTitle.Position = UDim2.new(0, 12, 0, 8)
     trackTitle.BackgroundTransparency = 1
-    trackTitle.Text = "📡 <b>RASTREADOR DE POSICIÓN</b>"
+    trackTitle.Text = "📡 <b>RASTREADOR ESP (JUGADORES)</b>"
     trackTitle.RichText = true
     trackTitle.Font = Enum.Font.GothamBold
-    trackTitle.TextSize = 14
+    trackTitle.TextSize = 13
     trackTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
     trackTitle.TextXAlignment = Enum.TextXAlignment.Left
     trackTitle.Parent = trackerCard
 
     local trackToggle = Instance.new("TextButton")
-    trackToggle.Size = UDim2.new(0, 70, 0, 30)
+    trackToggle.Size = UDim2.new(0, 70, 0, 28)
     trackToggle.Position = UDim2.new(1, -82, 0, 8)
     trackToggle.BackgroundColor3 = self.TrackerEnabled and Color3.fromRGB(0, 240, 255) or Color3.fromRGB(45, 38, 80)
     trackToggle.Text = self.TrackerEnabled and "ON" or "OFF"
@@ -512,7 +641,7 @@ function VortexHub:RenderCombatCategory(contentArea)
     trackToggle.Parent = trackerCard
 
     local trackToggleCorner = Instance.new("UICorner")
-    trackToggleCorner.CornerRadius = UDim.new(0, 15)
+    trackToggleCorner.CornerRadius = UDim.new(0, 14)
     trackToggleCorner.Parent = trackToggle
 
     local metricsText = Instance.new("TextLabel")
@@ -529,7 +658,7 @@ function VortexHub:RenderCombatCategory(contentArea)
 
     trackToggle.MouseButton1Click:Connect(function()
         local newState = not self.TrackerEnabled
-        local targetName = self.TrackedPlayer and self.TrackedPlayer.Name or (self.ActiveTarget and self.ActiveTarget.Name or "")
+        local targetName = self.TrackedPlayer and self.TrackedPlayer.Name or (self.ActiveTarget and typeof(self.ActiveTarget) == "Instance" and self.ActiveTarget:IsA("Player") and self.ActiveTarget.Name or "")
         self:RunCommand("player_tracker", { enabled = newState, targetPlayer = targetName })
         
         trackToggle.BackgroundColor3 = newState and Color3.fromRGB(0, 240, 255) or Color3.fromRGB(45, 38, 80)
@@ -569,7 +698,6 @@ function VortexHub:BuildUI()
     screen.DisplayOrder = 9999
     screen.Parent = parentGui
 
-    -- BOTÓN FLOTANTE DRAGGABLE (VORTEX ORBITAL LOGO)
     local toggleBtn = Instance.new("TextButton")
     toggleBtn.Name = "VortexLogoButton"
     toggleBtn.Size = UDim2.new(0, 60, 0, 60)
@@ -601,7 +729,6 @@ function VortexHub:BuildUI()
 
     MakeDraggable(toggleBtn)
 
-    -- FRAME PRINCIPAL
     local mainFrame = Instance.new("Frame")
     mainFrame.Name = "VortexMainFrame"
     mainFrame.Size = UDim2.new(0.75, 0, 0.78, 0)
@@ -626,7 +753,6 @@ function VortexHub:BuildUI()
         mainFrame.Visible = not mainFrame.Visible
     end)
 
-    -- HEADER BAR
     local header = Instance.new("Frame")
     header.Size = UDim2.new(1, 0, 0, 45)
     header.BackgroundColor3 = Color3.fromRGB(22, 18, 42)
@@ -658,7 +784,6 @@ function VortexHub:BuildUI()
     titleText.TextXAlignment = Enum.TextXAlignment.Left
     titleText.Parent = titleContainer
 
-    -- COLOR THEME SELECTOR
     local themeContainer = Instance.new("Frame")
     themeContainer.Size = UDim2.new(0, 160, 0, 30)
     themeContainer.Position = UDim2.new(1, -210, 0.5, -15)
@@ -700,7 +825,6 @@ function VortexHub:BuildUI()
         mainFrame.Visible = false
     end)
 
-    -- SIDEBAR Y CONTENT AREA
     local sidebar = Instance.new("Frame")
     sidebar.Size = UDim2.new(0.25, 0, 1, -45)
     sidebar.Position = UDim2.new(0, 0, 0, 45)
@@ -745,10 +869,10 @@ function VortexHub:BuildUI()
 end
 
 --------------------------------------------------------------------------------
--- 5. INICIALIZACIÓN
+-- 5. INICIALIZACIÓN DE MOTOR Y HOOKS DE REDIRECCIÓN DE ATAQUES
 --------------------------------------------------------------------------------
 
-HookMouseAim()
+HookCombatRedirection()
 VortexHub:BuildUI()
 
 if getgenv then
@@ -756,5 +880,5 @@ if getgenv then
     getgenv().VortexHub = VortexHub
 end
 
-print("[VortexHub] Proceso de carga finalizado.")
+print("[VortexHub] Proceso de carga finalizado con Motor Universal de Ataques.")
 return VortexHub
