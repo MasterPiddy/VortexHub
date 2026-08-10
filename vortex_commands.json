@@ -1,0 +1,71 @@
+{
+  "hubName": "VortexHub",
+  "version": "1.0.0",
+  "categories": [
+    {
+      "id": "combat",
+      "name": "Combate Táctico",
+      "commands": [
+        {
+          "id": "target_lock",
+          "name": "Auto-Aim Objetivo",
+          "type": "target_selector",
+          "enabled": false,
+          "selectedPlayer": "",
+          "predictMovement": true,
+          "predictionLead": 0.12,
+          "action": "SetTargetLock"
+        }
+      ]
+    },
+    {
+      "id": "player_mod",
+      "name": "Moderación de Jugadores",
+      "commands": [
+        {
+          "id": "set_walkspeed",
+          "name": "Velocidad de Camina",
+          "type": "slider",
+          "min": 16,
+          "max": 500,
+          "default": 16,
+          "current": 16,
+          "action": "ChangeWalkSpeed"
+        },
+        {
+          "id": "toggle_noclip",
+          "name": "Modo Noclip",
+          "type": "toggle",
+          "default": false,
+          "current": false,
+          "action": "SetNoclip"
+        }
+      ]
+    },
+    {
+      "id": "game_vars",
+      "name": "Variables del Juego",
+      "commands": [
+        {
+          "id": "set_gravity",
+          "name": "Gravedad del Mapa",
+          "type": "number_input",
+          "min": 0,
+          "max": 1000,
+          "default": 196.2,
+          "current": 196.2,
+          "action": "SetWorldGravity"
+        },
+        {
+          "id": "time_of_day",
+          "name": "Hora del Día",
+          "type": "dropdown",
+          "options": ["Mañana", "Mediodía", "Noche"],
+          "default": "Mediodía",
+          "current": "Mediodía",
+          "action": "SetTimeOfDay"
+        }
+      ]
+    }
+  ]
+}
