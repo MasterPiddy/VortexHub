@@ -1,6 +1,6 @@
 --[[
     PlayerTracker.luau - Módulo de Rastreo de Jugadores para VortexHub
-    Calcula distancia en tiempo real, posición relativa (X, Y, Z) y renderiza marcador visual/ESP.
+    Calcula distancia en tiempo real, posición relativa (X, Y, Z) y renderiza marcador visual/ESP compacto y legible.
 --]]
 
 local Services = {
@@ -13,7 +13,7 @@ local LocalPlayer = Services.Players.LocalPlayer
 
 local PlayerTracker = {
     Enabled = false,
-    TrackedPlayer = nil, -- Player Object
+    TrackedPlayer = nil,
     ShowDistance = true,
     ShowPosition = true,
     BillboardGui = nil,
@@ -25,15 +25,13 @@ local PlayerTracker = {
     }
 }
 
--- Limpiar marcadore visuales previos
 function PlayerTracker:ClearMarker()
     if self.BillboardGui then
-        self.BillboardGui:Destroy()
+        pcall(function() self.BillboardGui:Destroy() end)
         self.BillboardGui = nil
     end
 end
 
--- Asignar jugador a rastrear
 function PlayerTracker:SetTrackedPlayer(playerName)
     self:ClearMarker()
 
@@ -57,46 +55,58 @@ function PlayerTracker:SetTrackedPlayer(playerName)
     return nil
 end
 
--- Crear marcador visual sobre la cabeza del objetivo (ESP / Tracker)
+-- Marcador Visual ESP compacto y súper legible (sin borde amarillo alrededor de las letras)
 function PlayerTracker:CreateMarker(targetPlayer)
     if not targetPlayer.Character then return end
 
     local head = targetPlayer.Character:FindFirstChild("Head") or targetPlayer.Character:FindFirstChild("HumanoidRootPart")
     if not head then return end
 
+    -- BillboardGui compacto (130x24px)
     local billboard = Instance.new("BillboardGui")
     billboard.Name = "VortexTrackerTag"
     billboard.Adornee = head
-    billboard.Size = UDim2.new(0, 160, 0, 40)
-    billboard.StudsOffset = Vector3.new(0, 2.5, 0)
+    billboard.Size = UDim2.new(0, 135, 0, 24)
+    billboard.StudsOffset = Vector3.new(0, 2.2, 0)
     billboard.AlwaysOnTop = true
-    billboard.Parent = head
 
+    -- Frame contenedor con borde Accent
+    local frame = Instance.new("Frame")
+    frame.Name = "TrackerFrame"
+    frame.Size = UDim2.new(1, 0, 1, 0)
+    frame.BackgroundColor3 = Color3.fromRGB(15, 12, 28)
+    frame.BackgroundTransparency = 0.2
+    frame.Parent = billboard
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 5)
+    corner.Parent = frame
+
+    local frameStroke = Instance.new("UIStroke")
+    frameStroke.Thickness = 1
+    frameStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    frameStroke.Color = Color3.fromRGB(138, 43, 226)
+    frameStroke.Parent = frame
+
+    -- Texto legible de un solo color con sombra negra sutil
     local label = Instance.new("TextLabel")
     label.Name = "TrackerText"
-    label.Size = UDim2.new(1, 0, 1, 0)
-    label.BackgroundTransparency = 0.5
-    label.BackgroundColor3 = Color3.fromRGB(15, 12, 28)
-    label.TextColor3 = Color3.fromRGB(0, 240, 255) -- Electric Blue
-    label.TextSize = 13
+    label.Size = UDim2.new(1, -6, 1, 0)
+    label.Position = UDim2.new(0, 3, 0, 0)
+    label.BackgroundTransparency = 1
+    label.TextColor3 = Color3.fromRGB(255, 255, 255)
+    label.TextStrokeTransparency = 0.6
+    label.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+    label.TextSize = 11
     label.Font = Enum.Font.GothamBold
     label.RichText = true
     label.Text = targetPlayer.DisplayName
-    label.Parent = billboard
+    label.Parent = frame
 
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 6)
-    corner.Parent = label
-
-    local stroke = Instance.new("UIStroke")
-    stroke.Thickness = 1.5
-    stroke.Color = Color3.fromRGB(138, 43, 226)
-    stroke.Parent = label
-
+    billboard.Parent = head
     self.BillboardGui = billboard
 end
 
--- Obtener métricas en tiempo real (Distancia y Posición)
 function PlayerTracker:GetMetrics()
     local myChar = LocalPlayer.Character
     local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
@@ -113,7 +123,6 @@ function PlayerTracker:GetMetrics()
         return nil
     end
 
-    -- Cálculo de distancia en studs (y metros equivalentes: 1 stud ≈ 0.28m)
     local rawDistance = (targetRoot.Position - myRoot.Position).Magnitude
     local distanceMeters = math.floor(rawDistance * 0.28)
     local targetPos = targetRoot.Position
@@ -126,17 +135,18 @@ function PlayerTracker:GetMetrics()
         Health = health
     }
 
-    -- Actualizar marcador visual sobre la cabeza
-    if self.BillboardGui and self.BillboardGui:FindFirstChild("TrackerText") then
-        local label = self.BillboardGui.TrackerText
-        label.Text = string.format("🎯 <b>%s</b><br/><font color='#00FF66'>%dm</font> | HP: %d%%", 
-            self.TrackedPlayer.DisplayName, distanceMeters, health)
+    -- Formato compacto en 1 sola línea limpia: "🎯 Name • 283m • HP:100%"
+    if self.BillboardGui and self.BillboardGui:FindFirstChild("TrackerFrame") then
+        local label = self.BillboardGui.TrackerFrame:FindFirstChild("TrackerText")
+        if label then
+            label.Text = string.format("🎯 <b>%s</b> • <font color='#00FF66'>%dm</font> • %d%%", 
+                self.TrackedPlayer.DisplayName, distanceMeters, health)
+        end
     end
 
     return self.TrackedData
 end
 
--- Bucle de renderizado continuo
 function PlayerTracker:StartLoop()
     if self.RenderConnection then return end
 

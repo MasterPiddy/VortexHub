@@ -109,7 +109,7 @@ local function HookMouseAim()
 end
 
 --------------------------------------------------------------------------------
--- 2. MÓDULO PLAYER TRACKER (Rastreo de Distancia, Posición y ESP)
+-- 2. MÓDULO PLAYER TRACKER (Etiqueta Compacta y Legible)
 --------------------------------------------------------------------------------
 local function ClearTrackerMarker()
     if VortexHub.TrackerBillboard then
@@ -125,34 +125,48 @@ local function CreateTrackerMarker(targetPlayer)
     local head = targetPlayer.Character:FindFirstChild("Head") or targetPlayer.Character:FindFirstChild("HumanoidRootPart")
     if not head then return end
 
+    -- BillboardGui compacto (135x24 px)
     local billboard = Instance.new("BillboardGui")
     billboard.Name = "VortexTrackerTag"
     billboard.Adornee = head
-    billboard.Size = UDim2.new(0, 170, 0, 42)
-    billboard.StudsOffset = Vector3.new(0, 2.8, 0)
+    billboard.Size = UDim2.new(0, 135, 0, 24)
+    billboard.StudsOffset = Vector3.new(0, 2.2, 0)
     billboard.AlwaysOnTop = true
 
+    -- Frame contenedor oscuro
+    local frame = Instance.new("Frame")
+    frame.Name = "TrackerFrame"
+    frame.Size = UDim2.new(1, 0, 1, 0)
+    frame.BackgroundColor3 = Color3.fromRGB(15, 12, 28)
+    frame.BackgroundTransparency = 0.2
+    frame.Parent = billboard
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 5)
+    corner.Parent = frame
+
+    -- Borde de Frame (NO aplicado al texto para evitar bordes amarillos en las letras)
+    local frameStroke = Instance.new("UIStroke")
+    frameStroke.Thickness = 1
+    frameStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    frameStroke.Color = VortexHub.AccentColor
+    frameStroke.Parent = frame
+    table.insert(VortexHub.ThemeElements, frameStroke)
+
+    -- Texto legible de alta nitidez
     local label = Instance.new("TextLabel")
     label.Name = "TrackerText"
-    label.Size = UDim2.new(1, 0, 1, 0)
-    label.BackgroundTransparency = 0.4
-    label.BackgroundColor3 = Color3.fromRGB(15, 12, 28)
-    label.TextColor3 = Color3.fromRGB(0, 240, 255)
-    label.TextSize = 13
+    label.Size = UDim2.new(1, -6, 1, 0)
+    label.Position = UDim2.new(0, 3, 0, 0)
+    label.BackgroundTransparency = 1
+    label.TextColor3 = Color3.fromRGB(255, 255, 255)
+    label.TextStrokeTransparency = 0.6
+    label.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+    label.TextSize = 11
     label.Font = Enum.Font.GothamBold
     label.RichText = true
     label.Text = targetPlayer.DisplayName
-    label.Parent = billboard
-
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 6)
-    corner.Parent = label
-
-    local stroke = Instance.new("UIStroke")
-    stroke.Thickness = 1.5
-    stroke.Color = VortexHub.AccentColor
-    stroke.Parent = label
-    table.insert(VortexHub.ThemeElements, stroke)
+    label.Parent = frame
 
     billboard.Parent = head
     VortexHub.TrackerBillboard = billboard
@@ -184,11 +198,12 @@ local function UpdatePlayerTracker()
         Health = health
     }
 
-    if VortexHub.TrackerBillboard and VortexHub.TrackerBillboard:FindFirstChild("TrackerText") then
-        VortexHub.TrackerBillboard.TrackerText.Text = string.format(
-            "🎯 <b>%s</b><br/><font color='#00FF66'>%dm (%dsts)</font> | HP: %d%%",
-            VortexHub.TrackedPlayer.DisplayName, distanceMeters, math.floor(rawDistance), health
-        )
+    if VortexHub.TrackerBillboard and VortexHub.TrackerBillboard:FindFirstChild("TrackerFrame") then
+        local label = VortexHub.TrackerBillboard.TrackerFrame:FindFirstChild("TrackerText")
+        if label then
+            label.Text = string.format("🎯 <b>%s</b> • <font color='#00FF66'>%dm</font> • %d%%",
+                VortexHub.TrackedPlayer.DisplayName, distanceMeters, health)
+        end
     end
 end
 
@@ -536,7 +551,6 @@ function VortexHub:RenderCombatCategory(contentArea)
 end
 
 function VortexHub:BuildUI()
-    -- Determinar el contenedor GUI óptimo
     local parentGui = nil
     if gethui then
         pcall(function() parentGui = gethui() end)
@@ -587,7 +601,7 @@ function VortexHub:BuildUI()
 
     MakeDraggable(toggleBtn)
 
-    -- FRAME PRINCIPAL (ABIERTO POR DEFECTO AL EJECUTAR)
+    -- FRAME PRINCIPAL
     local mainFrame = Instance.new("Frame")
     mainFrame.Name = "VortexMainFrame"
     mainFrame.Size = UDim2.new(0.75, 0, 0.78, 0)
@@ -595,7 +609,7 @@ function VortexHub:BuildUI()
     mainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
     mainFrame.BackgroundColor3 = Color3.fromRGB(15, 12, 28)
     mainFrame.BackgroundTransparency = 0.1
-    mainFrame.Visible = true -- ABIERTO POR DEFECTO
+    mainFrame.Visible = true
     mainFrame.Parent = screen
 
     local mainCorner = Instance.new("UICorner")
