@@ -1,13 +1,10 @@
 --[[
-    VortexHub MainLoader.luau - Monolítico Standalone
+    VortexHub MainLoader.luau - Standalone Ultra-Compatible
     Ejecutable mediante:
     loadstring(game:HttpGet("https://raw.githubusercontent.com/MasterPiddy/VortexHub/main/MainLoader.luau"))()
 --]]
 
-if getgenv and getgenv().VortexHubLoaded and getgenv().VortexHub then
-    warn("[VortexHub] El Hub ya está en ejecución.")
-    return getgenv().VortexHub
-end
+print("[VortexHub] Cargando script...")
 
 local Services = {
     Players = game:GetService("Players"),
@@ -21,6 +18,21 @@ local Services = {
 
 local LocalPlayer = Services.Players.LocalPlayer
 local Mouse = LocalPlayer:GetMouse()
+
+-- Limpieza de UI previa si existe
+local function CleanOldUI()
+    local oldGuis = {
+        LocalPlayer:FindFirstChild("PlayerGui") and LocalPlayer.PlayerGui:FindFirstChild("VortexHubScreenGui"),
+        pcall(function() return Services.CoreGui:FindFirstChild("VortexHubScreenGui") end) and Services.CoreGui:FindFirstChild("VortexHubScreenGui")
+    }
+    for _, gui in ipairs(oldGuis) do
+        if gui and typeof(gui) == "Instance" then
+            pcall(function() gui:Destroy() end)
+        end
+    end
+end
+
+CleanOldUI()
 
 -- Entorno Global de VortexHub
 local VortexHub = {
@@ -77,7 +89,7 @@ local function GetTargetPosition()
 end
 
 local function HookMouseAim()
-    local success, err = pcall(function()
+    pcall(function()
         local gmt = getrawmetatable(game)
         if setreadonly then setreadonly(gmt, false) end
         local oldIndex = gmt.__index
@@ -94,9 +106,6 @@ local function HookMouseAim()
 
         if setreadonly then setreadonly(gmt, true) end
     end)
-    if not success then
-        warn("[VortexHub] Warning al aplicar HookMouseAim:", err)
-    end
 end
 
 --------------------------------------------------------------------------------
@@ -104,7 +113,7 @@ end
 --------------------------------------------------------------------------------
 local function ClearTrackerMarker()
     if VortexHub.TrackerBillboard then
-        VortexHub.TrackerBillboard:Destroy()
+        pcall(function() VortexHub.TrackerBillboard:Destroy() end)
         VortexHub.TrackerBillboard = nil
     end
 end
@@ -239,55 +248,17 @@ VortexHub.Commands["player_tracker"] = function(args)
     end
 end
 
-VortexHub.Commands["set_walkspeed"] = function(speed)
-    local char = LocalPlayer.Character
-    local hum = char and char:FindFirstChildOfClass("Humanoid")
-    if hum then
-        hum.WalkSpeed = tonumber(speed) or 16
-    end
-end
-
-VortexHub.Commands["toggle_noclip"] = function(enabled)
-    _G.VortexNoclip = enabled
-    if enabled and not VortexHub.NoclipConnection then
-        VortexHub.NoclipConnection = Services.RunService.Stepped:Connect(function()
-            if _G.VortexNoclip and LocalPlayer.Character then
-                for _, part in ipairs(LocalPlayer.Character:GetDescendants()) do
-                    if part:IsA("BasePart") and part.CanCollide then
-                        part.CanCollide = false
-                    end
-                end
-            end
-        end)
-    elseif not enabled and VortexHub.NoclipConnection then
-        VortexHub.NoclipConnection:Disconnect()
-        VortexHub.NoclipConnection = nil
-    end
-end
-
-VortexHub.Commands["set_gravity"] = function(gravity)
-    workspace.Gravity = tonumber(gravity) or 196.2
-end
-
-VortexHub.Commands["time_of_day"] = function(timeStr)
-    local times = { ["Mañana"] = "06:00:00", ["Mediodía"] = "12:00:00", ["Noche"] = "00:00:00" }
-    Services.Lighting.TimeOfDay = times[timeStr] or timeStr or "12:00:00"
-end
-
 function VortexHub:RunCommand(commandId, payload)
     local commandFunc = self.Commands[commandId]
     if commandFunc then
-        local success, err = pcall(function()
+        pcall(function()
             commandFunc(payload)
         end)
-        if not success then
-            warn("[VortexHub] Error al ejecutar comando (" .. tostring(commandId) .. "):", err)
-        end
     end
 end
 
 --------------------------------------------------------------------------------
--- 4. INTERFAZ GRÁFICA MÓVIL (STANDALONE / MONOLÍTICA)
+-- 4. INTERFAZ GRÁFICA MÓVIL (STANDALONE ULTRATOLERANTE)
 --------------------------------------------------------------------------------
 
 function VortexHub:SetAccentColor(color)
@@ -565,12 +536,16 @@ function VortexHub:RenderCombatCategory(contentArea)
 end
 
 function VortexHub:BuildUI()
+    -- Determinar el contenedor GUI óptimo
     local parentGui = nil
-    pcall(function() parentGui = Services.CoreGui end)
-    if not parentGui then parentGui = LocalPlayer:WaitForChild("PlayerGui") end
-
-    if parentGui:FindFirstChild("VortexHubScreenGui") then
-        parentGui.VortexHubScreenGui:Destroy()
+    if gethui then
+        pcall(function() parentGui = gethui() end)
+    end
+    if not parentGui then
+        pcall(function() parentGui = Services.CoreGui end)
+    end
+    if not parentGui then
+        parentGui = LocalPlayer:WaitForChild("PlayerGui")
     end
 
     local screen = Instance.new("ScreenGui")
@@ -581,14 +556,15 @@ function VortexHub:BuildUI()
     screen.Parent = parentGui
 
     -- BOTÓN FLOTANTE DRAGGABLE (VORTEX ORBITAL LOGO)
-    local toggleBtn = Instance.new("ImageButton")
+    local toggleBtn = Instance.new("TextButton")
     toggleBtn.Name = "VortexLogoButton"
-    toggleBtn.Size = UDim2.new(0, 58, 0, 58)
-    toggleBtn.Position = UDim2.new(0, 25, 0.25, 0)
+    toggleBtn.Size = UDim2.new(0, 60, 0, 60)
+    toggleBtn.Position = UDim2.new(0, 20, 0.25, 0)
     toggleBtn.BackgroundColor3 = Color3.fromRGB(15, 12, 28)
-    toggleBtn.BackgroundTransparency = 0.15
-    toggleBtn.Image = self.LogoAsset
-    toggleBtn.ScaleType = Enum.ScaleType.Fit
+    toggleBtn.BackgroundTransparency = 0.1
+    toggleBtn.Text = "🌀"
+    toggleBtn.TextSize = 28
+    toggleBtn.TextColor3 = Color3.fromRGB(240, 200, 255)
     toggleBtn.Parent = screen
 
     local btnCorner = Instance.new("UICorner")
@@ -609,29 +585,17 @@ function VortexHub:BuildUI()
     strokeGradient.Rotation = 45
     strokeGradient.Parent = btnStroke
 
-    -- Fallback Label si la imagen no carga
-    local fallbackText = Instance.new("TextLabel")
-    fallbackText.Size = UDim2.new(1, 0, 1, 0)
-    fallbackText.BackgroundTransparency = 1
-    fallbackText.Text = "<b>V</b>"
-    fallbackText.RichText = true
-    fallbackText.Font = Enum.Font.GothamBlack
-    fallbackText.TextSize = 28
-    fallbackText.TextColor3 = Color3.fromRGB(224, 176, 255)
-    fallbackText.ZIndex = 0
-    fallbackText.Parent = toggleBtn
-
     MakeDraggable(toggleBtn)
 
-    -- FRAME PRINCIPAL (LANDSCAPE - 75% ANCHO, CENTRADO)
+    -- FRAME PRINCIPAL (ABIERTO POR DEFECTO AL EJECUTAR)
     local mainFrame = Instance.new("Frame")
     mainFrame.Name = "VortexMainFrame"
     mainFrame.Size = UDim2.new(0.75, 0, 0.78, 0)
     mainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
     mainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
     mainFrame.BackgroundColor3 = Color3.fromRGB(15, 12, 28)
-    mainFrame.BackgroundTransparency = 0.12
-    mainFrame.Visible = false
+    mainFrame.BackgroundTransparency = 0.1
+    mainFrame.Visible = true -- ABIERTO POR DEFECTO
     mainFrame.Parent = screen
 
     local mainCorner = Instance.new("UICorner")
@@ -668,18 +632,11 @@ function VortexHub:BuildUI()
     titleCorner.CornerRadius = UDim.new(0, 8)
     titleCorner.Parent = titleContainer
 
-    local headerLogo = Instance.new("ImageLabel")
-    headerLogo.Size = UDim2.new(0, 24, 0, 24)
-    headerLogo.Position = UDim2.new(0, 6, 0.5, -12)
-    headerLogo.BackgroundTransparency = 1
-    headerLogo.Image = self.LogoAsset
-    headerLogo.Parent = titleContainer
-
     local titleText = Instance.new("TextLabel")
-    titleText.Size = UDim2.new(1, -36, 1, 0)
-    titleText.Position = UDim2.new(0, 34, 0, 0)
+    titleText.Size = UDim2.new(1, -16, 1, 0)
+    titleText.Position = UDim2.new(0, 12, 0, 0)
     titleText.BackgroundTransparency = 1
-    titleText.Text = "<b>VORTEXHUB</b>"
+    titleText.Text = "🌀 <b>VORTEXHUB</b>"
     titleText.RichText = true
     titleText.Font = Enum.Font.GothamBold
     titleText.TextSize = 16
@@ -770,6 +727,7 @@ function VortexHub:BuildUI()
 
     MakeDraggable(mainFrame, header)
     self:RenderCombatCategory(contentArea)
+    print("[VortexHub] UI construida e impresa en pantalla exitosamente.")
 end
 
 --------------------------------------------------------------------------------
@@ -784,5 +742,5 @@ if getgenv then
     getgenv().VortexHub = VortexHub
 end
 
-print("[VortexHub] Ejecutado exitosamente con UI Standalone.")
+print("[VortexHub] Proceso de carga finalizado.")
 return VortexHub
