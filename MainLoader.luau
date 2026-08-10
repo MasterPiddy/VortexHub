@@ -1,5 +1,5 @@
 --[[
-    VortexHub MainLoader.luau - Motor Universal con Auto-Aim para Jugadores & NPCs
+    VortexHub MainLoader.luau - Monolítico Ultracompacto & Libre de Crashes
     Ejecutable mediante:
     loadstring(game:HttpGet("https://raw.githubusercontent.com/MasterPiddy/VortexHub/main/MainLoader.luau"))()
 --]]
@@ -72,7 +72,7 @@ local VortexHub = {
 }
 
 --------------------------------------------------------------------------------
--- 1. MOTOR UNIVERSAL TARGET LOCK (JUGADORES & NPCS + HOOKS DE ATAQUES)
+-- 1. MOTOR OPTIMIZADO TARGET LOCK (JUGADORES & NPCS - SIN LAG / SIN CRASH)
 --------------------------------------------------------------------------------
 
 local function IsValidNPC(model)
@@ -83,10 +83,12 @@ local function IsValidNPC(model)
     return (hum and root and hum.Health > 0)
 end
 
+-- Búsqueda de objetivos optimizada
 local function GetValidTargets()
     local targets = {}
     local myChar = LocalPlayer.Character
 
+    -- 1. Jugadores
     if VortexHub.TargetPlayers then
         for _, player in ipairs(Services.Players:GetPlayers()) do
             if player ~= LocalPlayer and player.Character then
@@ -99,11 +101,24 @@ local function GetValidTargets()
         end
     end
 
+    -- 2. NPCs / Mobs (Búsqueda acotada a carpetas conocidas o primer nivel de Workspace)
     if VortexHub.TargetNPCs then
-        for _, obj in ipairs(Services.Workspace:GetDescendants()) do
-            if obj ~= myChar and IsValidNPC(obj) then
-                local root = obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChild("Torso") or obj.PrimaryPart
-                table.insert(targets, { Instance = obj, Character = obj, Root = root, IsPlayer = false })
+        local searchFolders = { Services.Workspace }
+        for _, folderName in ipairs({"Enemies", "NPCs", "Mobs", "Live", "Characters"}) do
+            local f = Services.Workspace:FindFirstChild(folderName)
+            if f then table.insert(searchFolders, f) end
+        end
+
+        local checked = {}
+        for _, folder in ipairs(searchFolders) do
+            for _, obj in ipairs(folder:GetChildren()) do
+                if obj:IsA("Model") and obj ~= myChar and not checked[obj] then
+                    checked[obj] = true
+                    if IsValidNPC(obj) then
+                        local root = obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChild("Torso") or obj.PrimaryPart
+                        table.insert(targets, { Instance = obj, Character = obj, Root = root, IsPlayer = false })
+                    end
+                end
             end
         end
     end
@@ -167,13 +182,7 @@ local function GetTargetRootPart(target)
 end
 
 local function GetTargetPosition()
-    if not VortexHub.TargetLockEnabled then return nil end
-
-    if VortexHub.TargetMode == "NearestDistance" then
-        VortexHub.ActiveTarget = GetNearestTargetByDistance()
-    elseif VortexHub.TargetMode == "NearestCursor" then
-        VortexHub.ActiveTarget = GetNearestTargetByCursor()
-    end
+    if not VortexHub.TargetLockEnabled or not VortexHub.ActiveTarget then return nil end
 
     local targetRoot = GetTargetRootPart(VortexHub.ActiveTarget)
     if not targetRoot then return nil end
@@ -185,9 +194,24 @@ local function GetTargetPosition()
     return targetPos
 end
 
--- Orientar automáticamente el personaje hacia el objetivo para asegurar ataques meelee/habilidades
+-- Hilo asíncrono para actualizar objetivo cada 0.15s (Cero lag / Cero crashes)
+task.spawn(function()
+    while task.wait(0.15) do
+        if VortexHub.TargetLockEnabled then
+            pcall(function()
+                if VortexHub.TargetMode == "NearestDistance" then
+                    VortexHub.ActiveTarget = GetNearestTargetByDistance()
+                elseif VortexHub.TargetMode == "NearestCursor" then
+                    VortexHub.ActiveTarget = GetNearestTargetByCursor()
+                end
+            end)
+        end
+    end
+end)
+
+-- Orientación de personaje ligera en RenderStepped
 Services.RunService.RenderStepped:Connect(function()
-    if VortexHub.TargetLockEnabled then
+    if VortexHub.TargetLockEnabled and VortexHub.ActiveTarget then
         local targetPos = GetTargetPosition()
         local myChar = LocalPlayer.Character
         local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
@@ -204,7 +228,6 @@ local function HookCombatRedirection()
         local gmt = getrawmetatable(game)
         if setreadonly then setreadonly(gmt, false) end
         local oldIndex = gmt.__index
-        local oldNamecall = gmt.__namecall
 
         gmt.__index = newcclosure(function(selfInstance, key)
             if selfInstance == Mouse then
@@ -223,47 +246,12 @@ local function HookCombatRedirection()
             return oldIndex(selfInstance, key)
         end)
 
-        gmt.__namecall = newcclosure(function(selfInstance, ...)
-            local method = getnamecallmethod()
-            local args = {...}
-
-            if VortexHub.TargetLockEnabled then
-                local targetPos = GetTargetPosition()
-                if targetPos then
-                    if method == "Raycast" or method == "raycast" or method == "FindPartOnRay" then
-                        local origin = args[1]
-                        if typeof(origin) == "Vector3" then
-                            args[2] = (targetPos - origin).Unit * 1000
-                            return oldNamecall(selfInstance, unpack(args))
-                        end
-                    end
-
-                    if method == "FireServer" or method == "fireServer" then
-                        for i, arg in ipairs(args) do
-                            if typeof(arg) == "CFrame" then
-                                args[i] = CFrame.new(arg.Position, targetPos)
-                            elseif typeof(arg) == "Vector3" and arg.Magnitude < 2 then
-                                local myChar = LocalPlayer.Character
-                                local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
-                                if myRoot then
-                                    args[i] = (targetPos - myRoot.Position).Unit
-                                end
-                            end
-                        end
-                        return oldNamecall(selfInstance, unpack(args))
-                    end
-                end
-            end
-
-            return oldNamecall(selfInstance, ...)
-        end)
-
         if setreadonly then setreadonly(gmt, true) end
     end)
 end
 
 --------------------------------------------------------------------------------
--- 2. MÓDULO PLAYER TRACKER (Etiqueta Compacta Legible)
+-- 2. MÓDULO PLAYER TRACKER (Etiqueta ESP Compacta & Corregida)
 --------------------------------------------------------------------------------
 local function ClearTrackerMarker()
     if VortexHub.TrackerBillboard then
@@ -377,25 +365,45 @@ VortexHub.Commands["target_lock"] = function(args)
     end
 end
 
+-- Lógica corregida de Player Tracker (Permite apagar/encender limpiamente)
 VortexHub.Commands["player_tracker"] = function(args)
     if typeof(args) == "table" then
-        if args.enabled ~= nil then VortexHub.TrackerEnabled = args.enabled end
+        if args.enabled ~= nil then
+            VortexHub.TrackerEnabled = args.enabled
+        end
+
+        if not VortexHub.TrackerEnabled then
+            VortexHub.TrackedPlayer = nil
+            ClearTrackerMarker()
+            return
+        end
+
+        -- Si se activó:
+        local found = nil
         if args.targetPlayer and args.targetPlayer ~= "" then
-            local found = nil
             for _, player in ipairs(Services.Players:GetPlayers()) do
                 if player ~= LocalPlayer and (player.Name:lower() == args.targetPlayer:lower() or player.DisplayName:lower() == args.targetPlayer:lower()) then
                     found = player
                     break
                 end
             end
-            VortexHub.TrackedPlayer = found
-            if found and args.enabled ~= false then
-                VortexHub.TrackerEnabled = true
-                CreateTrackerMarker(found)
+        end
+
+        if not found then
+            if VortexHub.ActiveTarget and typeof(VortexHub.ActiveTarget) == "Instance" and VortexHub.ActiveTarget:IsA("Player") then
+                found = VortexHub.ActiveTarget
+            else
+                local targetInst = GetNearestTargetByDistance()
+                if targetInst and typeof(targetInst) == "Instance" and targetInst:IsA("Player") then
+                    found = targetInst
+                end
             end
+        end
+
+        VortexHub.TrackedPlayer = found
+        if found then
+            CreateTrackerMarker(found)
         else
-            VortexHub.TrackedPlayer = nil
-            VortexHub.TrackerEnabled = false
             ClearTrackerMarker()
         end
     end
@@ -409,7 +417,7 @@ function VortexHub:RunCommand(commandId, payload)
 end
 
 --------------------------------------------------------------------------------
--- 4. INTERFAZ GRÁFICA MÓVIL (PANEL COMBAT COMPLETO CON FILTROS Y MODOS)
+-- 4. INTERFAZ GRÁFICA MÓVIL (PESTAÑA COMBAT)
 --------------------------------------------------------------------------------
 
 function VortexHub:SetAccentColor(color)
@@ -529,7 +537,6 @@ function VortexHub:RenderCombatCategory(contentArea)
         aimToggle.TextColor3 = self.TargetLockEnabled and Color3.fromRGB(15, 12, 28) or Color3.fromRGB(200, 200, 200)
     end)
 
-    -- Filtros de Tipo de Objetivo (Jugadores / NPCs)
     local filterLabel = Instance.new("TextLabel")
     filterLabel.Size = UDim2.new(1, -24, 0, 20)
     filterLabel.Position = UDim2.new(0, 12, 0, 42)
@@ -541,7 +548,6 @@ function VortexHub:RenderCombatCategory(contentArea)
     filterLabel.TextXAlignment = Enum.TextXAlignment.Left
     filterLabel.Parent = aimCard
 
-    -- Switch Jugadores
     local playersToggle = Instance.new("TextButton")
     playersToggle.Size = UDim2.new(0.44, 0, 0, 32)
     playersToggle.Position = UDim2.new(0, 12, 0, 66)
@@ -562,7 +568,6 @@ function VortexHub:RenderCombatCategory(contentArea)
         playersToggle.Text = "👥 Jugadores: " .. (self.TargetPlayers and "SI" or "NO")
     end)
 
-    -- Switch NPCs / Mobs
     local npcsToggle = Instance.new("TextButton")
     npcsToggle.Size = UDim2.new(0.44, 0, 0, 32)
     npcsToggle.Position = UDim2.new(0.51, 0, 0, 66)
@@ -583,7 +588,6 @@ function VortexHub:RenderCombatCategory(contentArea)
         npcsToggle.Text = "👾 NPCs / Mobs: " .. (self.TargetNPCs and "SI" or "NO")
     end)
 
-    -- Selector de Modo de Fijado (Más cercano / Cursor)
     local modeBtn = Instance.new("TextButton")
     modeBtn.Size = UDim2.new(0.95, -24, 0, 32)
     modeBtn.Position = UDim2.new(0, 12, 0, 108)
@@ -658,12 +662,11 @@ function VortexHub:RenderCombatCategory(contentArea)
 
     trackToggle.MouseButton1Click:Connect(function()
         local newState = not self.TrackerEnabled
-        local targetName = self.TrackedPlayer and self.TrackedPlayer.Name or (self.ActiveTarget and typeof(self.ActiveTarget) == "Instance" and self.ActiveTarget:IsA("Player") and self.ActiveTarget.Name or "")
-        self:RunCommand("player_tracker", { enabled = newState, targetPlayer = targetName })
+        self:RunCommand("player_tracker", { enabled = newState })
         
-        trackToggle.BackgroundColor3 = newState and Color3.fromRGB(0, 240, 255) or Color3.fromRGB(45, 38, 80)
-        trackToggle.Text = newState and "ON" or "OFF"
-        trackToggle.TextColor3 = newState and Color3.fromRGB(15, 12, 28) or Color3.fromRGB(200, 200, 200)
+        trackToggle.BackgroundColor3 = self.TrackerEnabled and Color3.fromRGB(0, 240, 255) or Color3.fromRGB(45, 38, 80)
+        trackToggle.Text = self.TrackerEnabled and "ON" or "OFF"
+        trackToggle.TextColor3 = self.TrackerEnabled and Color3.fromRGB(15, 12, 28) or Color3.fromRGB(200, 200, 200)
     end)
 
     Services.RunService.Heartbeat:Connect(function()
@@ -880,5 +883,5 @@ if getgenv then
     getgenv().VortexHub = VortexHub
 end
 
-print("[VortexHub] Proceso de carga finalizado con Motor Universal de Ataques.")
+print("[VortexHub] Proceso de carga finalizado libre de lag/crashes.")
 return VortexHub

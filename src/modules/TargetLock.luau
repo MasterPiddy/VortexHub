@@ -1,7 +1,5 @@
 --[[
-    TargetLock.luau - Motor Universal de Auto-Aim y Redirección de Ataques/Habilidades
-    - Soporte para Jugadores y NPCs/Mobs
-    - Redirección de Mouse.Hit, Character LookVector (orientación silenciosa), Raycast y RemoteEvents
+    TargetLock.luau - Motor Optimizado de Auto-Aim para Jugadores & NPCs (Sin Lag / Sin Crashes)
 --]]
 
 local Services = {
@@ -15,38 +13,29 @@ local Mouse = LocalPlayer:GetMouse()
 
 local TargetLock = {
     Enabled = false,
-    TargetPlayers = true,  -- Targetear Jugadores
-    TargetNPCs = true,      -- Targetear NPCs/Mobs
-    TargetMode = "NearestDistance", -- "NearestDistance", "NearestCursor", "Manual"
+    TargetPlayers = true,
+    TargetNPCs = true,
+    TargetMode = "NearestDistance",
     
-    CurrentTarget = nil,    -- Instancia (Player o Model NPC)
+    CurrentTarget = nil,
     PredictMovement = true,
     PredictionLead = 0.12,
-    
-    Hooked = false,
-    FaceTargetConnection = nil
+    Hooked = false
 }
 
--- Verificar si un modelo de Workspace es un NPC/Mob válido
 local function IsValidNPC(model)
     if not model or not model:IsA("Model") then return false end
-    if Services.Players:GetPlayerFromCharacter(model) then return false end -- No es jugador
-
+    if Services.Players:GetPlayerFromCharacter(model) then return false end
     local hum = model:FindFirstChildOfClass("Humanoid")
     local root = model:FindFirstChild("HumanoidRootPart") or model:FindFirstChild("Torso") or model.PrimaryPart
-
-    if hum and root and hum.Health > 0 then
-        return true
-    end
-    return false
+    return (hum and root and hum.Health > 0)
 end
 
--- Obtener todos los objetivos válidos (Jugadores y/o NPCs)
+-- Búsqueda ultrarrápida sin lag (GetChildren en carpetas comunes)
 function TargetLock:GetValidTargets()
     local targets = {}
     local myChar = LocalPlayer.Character
 
-    -- 1. Jugadores
     if self.TargetPlayers then
         for _, player in ipairs(Services.Players:GetPlayers()) do
             if player ~= LocalPlayer and player.Character then
@@ -59,12 +48,23 @@ function TargetLock:GetValidTargets()
         end
     end
 
-    -- 2. NPCs / Mobs en Workspace
     if self.TargetNPCs then
-        for _, obj in ipairs(Services.Workspace:GetDescendants()) do
-            if obj ~= myChar and IsValidNPC(obj) then
-                local root = obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChild("Torso") or obj.PrimaryPart
-                table.insert(targets, { Instance = obj, Character = obj, Root = root, IsPlayer = false })
+        local searchFolders = { Services.Workspace }
+        for _, folderName in ipairs({"Enemies", "NPCs", "Mobs", "Live", "Characters"}) do
+            local f = Services.Workspace:FindFirstChild(folderName)
+            if f then table.insert(searchFolders, f) end
+        end
+
+        local checked = {}
+        for _, folder in ipairs(searchFolders) do
+            for _, obj in ipairs(folder:GetChildren()) do
+                if obj:IsA("Model") and obj ~= myChar and not checked[obj] then
+                    checked[obj] = true
+                    if IsValidNPC(obj) then
+                        local root = obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChild("Torso") or obj.PrimaryPart
+                        table.insert(targets, { Instance = obj, Character = obj, Root = root, IsPlayer = false })
+                    end
+                end
             end
         end
     end
@@ -72,7 +72,6 @@ function TargetLock:GetValidTargets()
     return targets
 end
 
--- Encontrar el objetivo más cercano por distancia 3D (Jugadores o NPCs)
 function TargetLock:GetNearestTargetByDistance()
     local myChar = LocalPlayer.Character
     local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
@@ -93,7 +92,6 @@ function TargetLock:GetNearestTargetByDistance()
     return closest
 end
 
--- Encontrar el objetivo más cercano al cursor de la pantalla
 function TargetLock:GetNearestTargetByCursor()
     local camera = Services.Workspace.CurrentCamera
     if not camera then return nil end
@@ -117,7 +115,6 @@ function TargetLock:GetNearestTargetByCursor()
     return closest
 end
 
--- Obtener la posición RootPart de cualquier objetivo (Jugador o NPC)
 local function GetTargetRootPart(target)
     if not target then return nil end
     if typeof(target) == "Instance" then
@@ -130,51 +127,48 @@ local function GetTargetRootPart(target)
     return nil
 end
 
--- Obtener la posición exacta calculada del objetivo
 function TargetLock:GetTargetPosition()
-    if not self.Enabled then return nil end
-
-    -- Auto-Targeting dinámico
-    if self.TargetMode == "NearestDistance" then
-        self.CurrentTarget = self:GetNearestTargetByDistance()
-    elseif self.TargetMode == "NearestCursor" then
-        self.CurrentTarget = self:GetNearestTargetByCursor()
-    end
+    if not self.Enabled or not self.CurrentTarget then return nil end
 
     local targetRoot = GetTargetRootPart(self.CurrentTarget)
     if not targetRoot then return nil end
 
     local targetPos = targetRoot.Position
-
-    -- Predicción de movimiento
     if self.PredictMovement and targetRoot:IsA("BasePart") then
-        local velocity = targetRoot.AssemblyLinearVelocity
-        targetPos = targetPos + (velocity * self.PredictionLead)
+        targetPos = targetPos + (targetRoot.AssemblyLinearVelocity * self.PredictionLead)
     end
-
     return targetPos
 end
 
--- Orientar silenciosamente el personaje del jugador hacia el objetivo (para ataques Melee / LookVector)
-function TargetLock:StartFaceTargetLoop()
-    if self.FaceTargetConnection then return end
-
-    self.FaceTargetConnection = Services.RunService.RenderStepped:Connect(function()
-        if self.Enabled then
-            local targetPos = self:GetTargetPosition()
-            local myChar = LocalPlayer.Character
-            local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
-
-            if targetPos and myRoot then
-                -- Orienta el HumanoidRootPart hacia el objetivo horizontalmente sin inclinar la cámara
-                local lookAt = Vector3.new(targetPos.X, myRoot.Position.Y, targetPos.Z)
-                myRoot.CFrame = CFrame.new(myRoot.Position, lookAt)
-            end
+-- Bucle asíncrono para actualizar objetivo cada 0.15s
+task.spawn(function()
+    while task.wait(0.15) do
+        if TargetLock.Enabled then
+            pcall(function()
+                if TargetLock.TargetMode == "NearestDistance" then
+                    TargetLock.CurrentTarget = TargetLock:GetNearestTargetByDistance()
+                elseif TargetLock.TargetMode == "NearestCursor" then
+                    TargetLock.CurrentTarget = TargetLock:GetNearestTargetByCursor()
+                end
+            end)
         end
-    end)
-end
+    end
+end)
 
--- Hooks Avanzados: Mouse, Raycast y RemoteEvents
+-- Orientación de personaje suave en RenderStepped
+Services.RunService.RenderStepped:Connect(function()
+    if TargetLock.Enabled and TargetLock.CurrentTarget then
+        local targetPos = TargetLock:GetTargetPosition()
+        local myChar = LocalPlayer.Character
+        local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+
+        if targetPos and myRoot then
+            local lookAt = Vector3.new(targetPos.X, myRoot.Position.Y, targetPos.Z)
+            myRoot.CFrame = CFrame.new(myRoot.Position, lookAt)
+        end
+    end
+end)
+
 function TargetLock:HookAll()
     if self.Hooked then return end
 
@@ -182,9 +176,7 @@ function TargetLock:HookAll()
         local gmt = getrawmetatable(game)
         if setreadonly then setreadonly(gmt, false) end
         local oldIndex = gmt.__index
-        local oldNamecall = gmt.__namecall
 
-        -- 1. Hook de Mouse.Hit y Mouse.Target
         gmt.__index = newcclosure(function(selfInstance, key)
             if selfInstance == Mouse then
                 if key == "Hit" or key == "hit" then
@@ -202,54 +194,10 @@ function TargetLock:HookAll()
             return oldIndex(selfInstance, key)
         end)
 
-        -- 2. Hook de Namecall para Raycast y RemoteEvents de Habilidades
-        gmt.__namecall = newcclosure(function(selfInstance, ...)
-            local method = getnamecallmethod()
-            local args = {...}
-
-            if TargetLock.Enabled then
-                local targetPos = TargetLock:GetTargetPosition()
-
-                if targetPos then
-                    -- Interceptar Raycast de habilidades
-                    if method == "Raycast" or method == "raycast" or method == "FindPartOnRay" then
-                        local origin = args[1]
-                        if typeof(origin) == "Vector3" then
-                            local dir = (targetPos - origin).Unit * 1000
-                            args[2] = dir
-                            return oldNamecall(selfInstance, unpack(args))
-                        end
-                    end
-
-                    -- Interceptar disparos de RemoteEvents de ataques
-                    if method == "FireServer" or method == "fireServer" then
-                        for i, arg in ipairs(args) do
-                            if typeof(arg) == "CFrame" then
-                                args[i] = CFrame.new(arg.Position, targetPos)
-                            elseif typeof(arg) == "Vector3" and (arg - targetPos).Magnitude > 5 then
-                                -- Si pasa un vector de dirección o punto de impacto
-                                if arg.Magnitude < 2 then -- Vector3 de dirección normalizado
-                                    local myChar = LocalPlayer.Character
-                                    local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
-                                    if myRoot then
-                                        args[i] = (targetPos - myRoot.Position).Unit
-                                    end
-                                end
-                            end
-                        end
-                        return oldNamecall(selfInstance, unpack(args))
-                    end
-                end
-            end
-
-            return oldNamecall(selfInstance, ...)
-        end)
-
         if setreadonly then setreadonly(gmt, true) end
     end)
 
     self.Hooked = true
-    self:StartFaceTargetLoop()
 end
 
 return TargetLock
