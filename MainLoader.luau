@@ -1,7 +1,7 @@
 --[[
     VortexHub MainLoader.luau
     Formato ejecutable listo para utilizarse mediante:
-    loadstring(game:HttpGet("https://raw.githubusercontent.com/TuUsuario/VortexHub/main/MainLoader.lua"))()
+    loadstring(game:HttpGet("https://raw.githubusercontent.com/MasterPiddy/VortexHub/main/MainLoader.luau"))()
 --]]
 
 if getgenv and getgenv().VortexHubLoaded then
