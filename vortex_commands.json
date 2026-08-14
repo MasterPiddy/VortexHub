@@ -8,33 +8,40 @@
       "commands": [
         {
           "id": "target_lock",
-          "name": "Auto-Aim Objetivo",
+          "name": "Auto-Aim Universal (Target Lock)",
           "type": "target_selector",
           "enabled": false,
-          "selectedPlayer": "",
+          "targetPlayers": true,
+          "targetNPCs": true,
+          "targetPart": "HumanoidRootPart",
+          "playerHighlight": false,
+          "targetMode": "NearestDistance",
           "predictMovement": true,
           "predictionLead": 0.12,
+          "safeZoneCheck": true,
+          "pvpDisabledCheck": true,
           "action": "SetTargetLock"
         },
         {
           "id": "player_tracker",
-          "name": "Rastreo de Posición y Distancia",
+          "name": "Rastreador ESP de Jugadores",
           "type": "target_tracker",
           "enabled": false,
           "selectedPlayer": "",
           "showDistance": true,
           "showPosition": true,
+          "showHealth": true,
           "action": "SetPlayerTracker"
         }
       ]
     },
     {
-      "id": "player_mod",
-      "name": "Moderación de Jugadores",
+      "id": "movement",
+      "name": "Movimiento y Física",
       "commands": [
         {
           "id": "set_walkspeed",
-          "name": "Velocidad de Camina",
+          "name": "Velocidad de Caminado",
           "type": "slider",
           "min": 16,
           "max": 500,
@@ -49,31 +56,6 @@
           "default": false,
           "current": false,
           "action": "SetNoclip"
-        }
-      ]
-    },
-    {
-      "id": "game_vars",
-      "name": "Variables del Juego",
-      "commands": [
-        {
-          "id": "set_gravity",
-          "name": "Gravedad del Mapa",
-          "type": "number_input",
-          "min": 0,
-          "max": 1000,
-          "default": 196.2,
-          "current": 196.2,
-          "action": "SetWorldGravity"
-        },
-        {
-          "id": "time_of_day",
-          "name": "Hora del Día",
-          "type": "dropdown",
-          "options": ["Mañana", "Mediodía", "Noche"],
-          "default": "Mediodía",
-          "current": "Mediodía",
-          "action": "SetTimeOfDay"
         }
       ]
     }

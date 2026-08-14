@@ -1,5 +1,9 @@
 --[[
-    VortexHub MainLoader.luau - Limpieza de Duplicados & Soporte Completo gethui()
+    VortexHub MainLoader.luau - Motor Completo de Auto-Aim / Silent Aim & UI
+    - SafeZoneCheck y PvPDisabledCheck automáticos y no editables.
+    - PlayerHighlight: Resaltado Rojo Puro.
+    - Metamethod Hooks: Mouse.Hit, ReplicatedStorage.Mouse, RegisterHit, Raycast.
+    - Libre de dependencias de DragonM1 / DragonGun.
     Ejecutable mediante:
     loadstring(game:HttpGet("https://raw.githubusercontent.com/MasterPiddy/VortexHub/main/MainLoader.luau"))()
 --]]
@@ -14,13 +18,14 @@ local Services = {
     TweenService = game:GetService("TweenService"),
     UserInputService = game:GetService("UserInputService"),
     CoreGui = game:GetService("CoreGui"),
-    Workspace = game:GetService("Workspace")
+    Workspace = game:GetService("Workspace"),
+    ReplicatedStorage = game:GetService("ReplicatedStorage")
 }
 
 local LocalPlayer = Services.Players.LocalPlayer
 local Mouse = LocalPlayer:GetMouse()
 
--- Limpieza exhaustiva de cualquier UI duplicada en gethui(), CoreGui o PlayerGui
+-- Limpieza exhaustiva de cualquier UI previa en todos los contenedores
 local function CleanOldUI()
     local targetContainers = {}
 
@@ -50,14 +55,18 @@ local VortexHub = {
     Version = "1.0.0",
     Config = {},
     
-    -- Target Lock State & Filters
+    -- Target Lock & Auto-Aim State
     TargetLockEnabled = false,
     TargetPlayers = true,
     TargetNPCs = true,
-    TargetMode = "NearestDistance",
+    TargetMode = "NearestDistance", -- "NearestDistance", "NearestCursor", "Manual"
+    TargetPart = "HumanoidRootPart", -- "HumanoidRootPart", "Head"
+    PlayerHighlightEnabled = false,
+    
     ActiveTarget = nil,
     PredictMovement = true,
     PredictionLead = 0.12,
+    HighlightInstance = nil,
     
     Commands = {},
     
@@ -83,8 +92,71 @@ local VortexHub = {
 }
 
 --------------------------------------------------------------------------------
--- 1. MOTOR OPTIMIZADO TARGET LOCK (JUGADORES & NPCS)
+-- 1. VALIDACIONES HARDCODED (SAFEZONE & PVP DISABLED CHECK AUTOMÁTICAS)
 --------------------------------------------------------------------------------
+
+local function IsInSafeZone(targetChar)
+    if not targetChar then return false end
+    local hrp = targetChar:FindFirstChild("HumanoidRootPart")
+    if not hrp then return false end
+    local wo = Services.Workspace:FindFirstChild("_WorldOrigin")
+    if not wo then return false end
+
+    -- SafeZones
+    local safeZones = wo:FindFirstChild("SafeZones")
+    if safeZones then
+        for _, zone in pairs(safeZones:GetChildren()) do
+            local mesh = zone:FindFirstChild("Mesh")
+            if mesh and mesh:IsA("SpecialMesh") then
+                local realDiameter = zone.Size.X * mesh.Scale.X
+                local radius = realDiameter / 2
+                if radius and radius > 0 then
+                    local dist = (zone.Position - hrp.Position).Magnitude
+                    if dist <= radius then return true end
+                end
+            end
+        end
+    end
+
+    -- Player Spawns
+    local spawns = wo:FindFirstChild("PlayerSpawns")
+    if spawns then
+        for _, folder in pairs(spawns:GetChildren()) do
+            for _, sp in pairs(folder:GetChildren()) do
+                local part = sp:FindFirstChild("Part") or sp
+                if part:IsA("BasePart") and (hrp.Position - part.Position).Magnitude <= 400 then
+                    return true
+                end
+            end
+        end
+    end
+    return false
+end
+
+local function IsPvPDisabled(targetPlayer)
+    if not targetPlayer or not targetPlayer:IsA("Player") then return false end
+    local ok, disabled = pcall(function()
+        local attr = targetPlayer:GetAttribute("PvpDisabled")
+        if attr ~= nil then return attr == true end
+        local pgui = targetPlayer:FindFirstChild("PlayerGui")
+        local main = pgui and pgui:FindFirstChild("Main")
+        if main then
+            local dis = main:FindFirstChild("PvpDisabled")
+            if dis and dis.Visible then return true end
+            local pvp = main:FindFirstChild("Pvp")
+            if pvp then
+                local frame = pvp:FindFirstChild("Frame")
+                local btn = frame and (frame:FindFirstChild("PvpButton") or frame:FindFirstChildOfClass("TextButton"))
+                if btn and btn:IsA("TextButton") then
+                    local txt = tostring(btn.Text or ""):upper()
+                    if txt:find("OFF") then return true end
+                end
+            end
+        end
+        return false
+    end)
+    return ok and disabled
+end
 
 local function IsValidNPC(model)
     if not model or not model:IsA("Model") then return false end
@@ -94,22 +166,30 @@ local function IsValidNPC(model)
     return (hum and root and hum.Health > 0)
 end
 
+--------------------------------------------------------------------------------
+-- 2. BÚSQUEDA Y FILTRADO DE OBJETIVOS
+--------------------------------------------------------------------------------
+
 local function GetValidTargets()
     local targets = {}
     local myChar = LocalPlayer.Character
 
+    -- 1. Jugadores (Con filtros automáticos de SafeZone & PvP)
     if VortexHub.TargetPlayers then
         for _, player in ipairs(Services.Players:GetPlayers()) do
             if player ~= LocalPlayer and player.Character then
-                local root = player.Character:FindFirstChild("HumanoidRootPart")
-                local hum = player.Character:FindFirstChildOfClass("Humanoid")
-                if root and hum and hum.Health > 0 then
-                    table.insert(targets, { Instance = player, Character = player.Character, Root = root, IsPlayer = true })
+                if not IsPvPDisabled(player) and not IsInSafeZone(player.Character) then
+                    local root = player.Character:FindFirstChild("HumanoidRootPart")
+                    local hum = player.Character:FindFirstChildOfClass("Humanoid")
+                    if root and hum and hum.Health > 0 then
+                        table.insert(targets, { Instance = player, Character = player.Character, Root = root, IsPlayer = true })
+                    end
                 end
             end
         end
     end
 
+    -- 2. NPCs / Mobs (Carpetas comunes de enemigos)
     if VortexHub.TargetNPCs then
         local searchFolders = { Services.Workspace }
         for _, folderName in ipairs({"Enemies", "NPCs", "Mobs", "Live", "Characters"}) do
@@ -122,7 +202,7 @@ local function GetValidTargets()
             for _, obj in ipairs(folder:GetChildren()) do
                 if obj:IsA("Model") and obj ~= myChar and not checked[obj] then
                     checked[obj] = true
-                    if IsValidNPC(obj) then
+                    if IsValidNPC(obj) and not IsInSafeZone(obj) then
                         local root = obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChild("Torso") or obj.PrimaryPart
                         table.insert(targets, { Instance = obj, Character = obj, Root = root, IsPlayer = false })
                     end
@@ -177,31 +257,86 @@ local function GetNearestTargetByCursor()
     return closest
 end
 
-local function GetTargetRootPart(target)
+local function GetTargetCharacter(target)
     if not target then return nil end
     if typeof(target) == "Instance" then
-        if target:IsA("Player") and target.Character then
-            return target.Character:FindFirstChild("HumanoidRootPart")
+        if target:IsA("Player") then
+            return target.Character
         elseif target:IsA("Model") then
-            return target:FindFirstChild("HumanoidRootPart") or target:FindFirstChild("Torso") or target.PrimaryPart
+            return target
         end
     end
     return nil
 end
 
+local function GetTargetAimPart(target, preferredPart)
+    local char = GetTargetCharacter(target)
+    if not char then return nil end
+    preferredPart = preferredPart or VortexHub.TargetPart or "HumanoidRootPart"
+
+    return char:FindFirstChild(preferredPart) 
+        or char:FindFirstChild("HumanoidRootPart") 
+        or char:FindFirstChild("Head") 
+        or char:FindFirstChild("Torso") 
+        or char.PrimaryPart
+end
+
 local function GetTargetPosition()
     if not VortexHub.TargetLockEnabled or not VortexHub.ActiveTarget then return nil end
 
-    local targetRoot = GetTargetRootPart(VortexHub.ActiveTarget)
-    if not targetRoot then return nil end
+    local targetPart = GetTargetAimPart(VortexHub.ActiveTarget, VortexHub.TargetPart)
+    if not targetPart then return nil end
 
-    local targetPos = targetRoot.Position
-    if VortexHub.PredictMovement and targetRoot:IsA("BasePart") then
-        targetPos = targetPos + (targetRoot.AssemblyLinearVelocity * VortexHub.PredictionLead)
+    local targetPos = targetPart.Position
+    if VortexHub.PredictMovement and targetPart:IsA("BasePart") then
+        targetPos = targetPos + (targetPart.AssemblyLinearVelocity * VortexHub.PredictionLead)
     end
     return targetPos
 end
 
+--------------------------------------------------------------------------------
+-- 3. PLAYER HIGHLIGHT (ROJO PURO)
+--------------------------------------------------------------------------------
+
+local function UpdatePlayerHighlight()
+    if not VortexHub.PlayerHighlightEnabled or not VortexHub.TargetLockEnabled or not VortexHub.ActiveTarget then
+        if VortexHub.HighlightInstance then
+            pcall(function() VortexHub.HighlightInstance:Destroy() end)
+            VortexHub.HighlightInstance = nil
+        end
+        return
+    end
+
+    local targetChar = GetTargetCharacter(VortexHub.ActiveTarget)
+    if not targetChar then
+        if VortexHub.HighlightInstance then
+            pcall(function() VortexHub.HighlightInstance:Destroy() end)
+            VortexHub.HighlightInstance = nil
+        end
+        return
+    end
+
+    if not VortexHub.HighlightInstance or VortexHub.HighlightInstance.Parent ~= targetChar then
+        if VortexHub.HighlightInstance then pcall(function() VortexHub.HighlightInstance:Destroy() end) end
+        
+        local hl = Instance.new("Highlight")
+        hl.Name = "VortexPlayerHighlight"
+        hl.Adornee = targetChar
+        hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+        hl.FillColor = Color3.fromRGB(255, 0, 0) -- Rojo Puro
+        hl.OutlineColor = Color3.fromRGB(255, 60, 60)
+        hl.FillTransparency = 0.35
+        hl.OutlineTransparency = 0
+        hl.Parent = targetChar
+        VortexHub.HighlightInstance = hl
+    end
+end
+
+--------------------------------------------------------------------------------
+-- 4. BUCLES DE EJECUCIÓN Y METATABLE HOOKS
+--------------------------------------------------------------------------------
+
+-- Bucle de actualización atenuado a 0.15s
 task.spawn(function()
     while task.wait(0.15) do
         if VortexHub.TargetLockEnabled then
@@ -211,11 +346,18 @@ task.spawn(function()
                 elseif VortexHub.TargetMode == "NearestCursor" then
                     VortexHub.ActiveTarget = GetNearestTargetByCursor()
                 end
+                UpdatePlayerHighlight()
             end)
+        else
+            if VortexHub.HighlightInstance then
+                pcall(function() VortexHub.HighlightInstance:Destroy() end)
+                VortexHub.HighlightInstance = nil
+            end
         end
     end
 end)
 
+-- Orientación horizontal ligera del personaje
 Services.RunService.RenderStepped:Connect(function()
     if VortexHub.TargetLockEnabled and VortexHub.ActiveTarget then
         local targetPos = GetTargetPosition()
@@ -230,26 +372,109 @@ Services.RunService.RenderStepped:Connect(function()
 end)
 
 local function HookCombatRedirection()
+    -- 1. Hook de ReplicatedStorage.Mouse (Skills de Blox Fruits)
+    pcall(function()
+        local MouseModuleInstance = Services.ReplicatedStorage:FindFirstChild("Mouse")
+        if MouseModuleInstance then
+            local MouseModule = require(MouseModuleInstance)
+            if MouseModule and typeof(MouseModule) == "table" then
+                local realStore = { Hit = rawget(MouseModule, "Hit"), Target = rawget(MouseModule, "Target") }
+                local mmt = getrawmetatable(MouseModule)
+                if mmt then setreadonly(mmt, false) else mmt = {}; setmetatable(MouseModule, mmt) end
+                rawset(MouseModule, "Hit", nil); rawset(MouseModule, "Target", nil)
+                
+                mmt.__index = function(selfTable, key)
+                    if key == "Hit" then
+                        if VortexHub.TargetLockEnabled and VortexHub.ActiveTarget then
+                            local tPos = GetTargetPosition()
+                            if tPos then return CFrame.new(tPos) end
+                        end
+                        return realStore.Hit
+                    elseif key == "Target" then
+                        if VortexHub.TargetLockEnabled and VortexHub.ActiveTarget then
+                            local tPart = GetTargetAimPart(VortexHub.ActiveTarget, VortexHub.TargetPart)
+                            if tPart then return tPart end
+                        end
+                        return realStore.Target
+                    end
+                end
+                mmt.__newindex = function(selfTable, key, value)
+                    if key == "Hit" or key == "Target" then realStore[key] = value else rawset(selfTable, key, value) end
+                end
+                setreadonly(mmt, true)
+            end
+        end
+    end)
+
+    -- 2. Hook global de Mouse y Namecall
     pcall(function()
         local gmt = getrawmetatable(game)
         if setreadonly then setreadonly(gmt, false) end
         local oldIndex = gmt.__index
+        local oldNamecall = gmt.__namecall
 
         gmt.__index = newcclosure(function(selfInstance, key)
             if selfInstance == Mouse then
                 if key == "Hit" or key == "hit" then
-                    local targetPos = GetTargetPosition()
-                    if targetPos then
-                        return CFrame.new(targetPos)
+                    if VortexHub.TargetLockEnabled and VortexHub.ActiveTarget then
+                        local targetPos = GetTargetPosition()
+                        if targetPos then return CFrame.new(targetPos) end
                     end
                 elseif key == "Target" or key == "target" then
-                    local targetRoot = GetTargetRootPart(VortexHub.ActiveTarget)
-                    if targetRoot then
-                        return targetRoot
+                    if VortexHub.TargetLockEnabled and VortexHub.ActiveTarget then
+                        local targetPart = GetTargetAimPart(VortexHub.ActiveTarget, VortexHub.TargetPart)
+                        if targetPart then return targetPart end
                     end
                 end
             end
             return oldIndex(selfInstance, key)
+        end)
+
+        gmt.__namecall = newcclosure(function(selfInstance, ...)
+            local method = getnamecallmethod()
+            local args = {...}
+
+            if VortexHub.TargetLockEnabled and VortexHub.ActiveTarget then
+                local targetPos = GetTargetPosition()
+                local targetChar = GetTargetCharacter(VortexHub.ActiveTarget)
+                local targetPart = GetTargetAimPart(VortexHub.ActiveTarget, VortexHub.TargetPart)
+
+                if targetPos and targetChar and targetPart then
+                    -- Raycasts de habilidades
+                    if method == "Raycast" or method == "raycast" or method == "FindPartOnRay" or method == "FindPartOnRayWithIgnoreList" then
+                        local origin = args[1]
+                        if typeof(origin) == "Vector3" then
+                            args[2] = (targetPos - origin).Unit * 1000
+                            return oldNamecall(selfInstance, unpack(args))
+                        end
+                    end
+
+                    -- Remotes de impacto (RegisterHit)
+                    if selfInstance.Name == "RE/RegisterHit" or selfInstance.Name == "RegisterHit" or tostring(selfInstance.Name):find("RegisterHit") then
+                        args[1] = targetPart
+                        args[2] = { { targetChar, targetPart } }
+                        return oldNamecall(selfInstance, unpack(args))
+                    end
+
+                    -- FireServer genérico con CFrame o Vector3
+                    if method == "FireServer" or method == "fireServer" then
+                        for i, arg in ipairs(args) do
+                            if typeof(arg) == "CFrame" then
+                                args[i] = CFrame.new(arg.Position, targetPos)
+                            elseif typeof(arg) == "Vector3" and arg.Magnitude < 2 then
+                                local myChar = LocalPlayer.Character
+                                local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                                if myRoot then
+                                    args[i] = (targetPos - myRoot.Position).Unit
+                                end
+                            end
+                        end
+                        return oldNamecall(selfInstance, unpack(args))
+                    end
+                end
+            end
+
+            return oldNamecall(selfInstance, ...)
         end)
 
         if setreadonly then setreadonly(gmt, true) end
@@ -257,7 +482,7 @@ local function HookCombatRedirection()
 end
 
 --------------------------------------------------------------------------------
--- 2. MÓDULO PLAYER TRACKER (Etiqueta ESP Compacta)
+-- 5. MÓDULO PLAYER TRACKER (Etiqueta ESP Compacta)
 --------------------------------------------------------------------------------
 local function ClearTrackerMarker()
     if VortexHub.TrackerBillboard then
@@ -358,7 +583,7 @@ Services.RunService.Heartbeat:Connect(function()
 end)
 
 --------------------------------------------------------------------------------
--- 3. REGISTRO ESTRUCTURAL DE COMANDOS
+-- 6. REGISTRO ESTRUCTURAL DE COMANDOS
 --------------------------------------------------------------------------------
 
 VortexHub.Commands["target_lock"] = function(args)
@@ -367,6 +592,8 @@ VortexHub.Commands["target_lock"] = function(args)
         if args.targetPlayers ~= nil then VortexHub.TargetPlayers = args.targetPlayers end
         if args.targetNPCs ~= nil then VortexHub.TargetNPCs = args.targetNPCs end
         if args.targetMode then VortexHub.TargetMode = args.targetMode end
+        if args.targetPart then VortexHub.TargetPart = args.targetPart end
+        if args.playerHighlight ~= nil then VortexHub.PlayerHighlightEnabled = args.playerHighlight end
         if args.predictionLead then VortexHub.PredictionLead = tonumber(args.predictionLead) or 0.12 end
     end
 end
@@ -421,7 +648,7 @@ function VortexHub:RunCommand(commandId, payload)
 end
 
 --------------------------------------------------------------------------------
--- 4. INTERFAZ GRÁFICA MÓVIL (SIN BOTONES DUPLICADOS)
+-- 7. INTERFAZ GRÁFICA MÓVIL
 --------------------------------------------------------------------------------
 
 function VortexHub:SetAccentColor(color)
@@ -500,7 +727,7 @@ function VortexHub:RenderCombatCategory(contentArea)
 
     -- 1. TARJETA CONTROL AUTO-AIM
     local aimCard = Instance.new("Frame")
-    aimCard.Size = UDim2.new(0.95, 0, 0, 155)
+    aimCard.Size = UDim2.new(0.95, 0, 0, 225)
     aimCard.BackgroundColor3 = Color3.fromRGB(22, 18, 42)
     aimCard.Parent = scroll
 
@@ -541,70 +768,102 @@ function VortexHub:RenderCombatCategory(contentArea)
         aimToggle.TextColor3 = self.TargetLockEnabled and Color3.fromRGB(15, 12, 28) or Color3.fromRGB(200, 200, 200)
     end)
 
+    -- Filtro de Objetivos (Jugadores / NPCs)
     local filterLabel = Instance.new("TextLabel")
     filterLabel.Size = UDim2.new(1, -24, 0, 20)
-    filterLabel.Position = UDim2.new(0, 12, 0, 42)
+    filterLabel.Position = UDim2.new(0, 12, 0, 40)
     filterLabel.BackgroundTransparency = 1
-    filterLabel.Text = "Tipo de Objetivo Aceptado:"
+    filterLabel.Text = "Tipo de Objetivo:"
     filterLabel.Font = Enum.Font.GothamMedium
-    filterLabel.TextSize = 12
+    filterLabel.TextSize = 11.5
     filterLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
     filterLabel.TextXAlignment = Enum.TextXAlignment.Left
     filterLabel.Parent = aimCard
 
     local playersToggle = Instance.new("TextButton")
-    playersToggle.Size = UDim2.new(0.44, 0, 0, 32)
-    playersToggle.Position = UDim2.new(0, 12, 0, 66)
+    playersToggle.Size = UDim2.new(0.44, 0, 0, 30)
+    playersToggle.Position = UDim2.new(0, 12, 0, 62)
     playersToggle.BackgroundColor3 = self.TargetPlayers and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(30, 24, 56)
-    playersToggle.Text = "👤 Jugadores: " .. (self.TargetPlayers and "SI" or "NO")
+    playersToggle.Text = "👥 Jugadores: " .. (self.TargetPlayers and "SI" or "NO")
     playersToggle.Font = Enum.Font.GothamMedium
-    playersToggle.TextSize = 12
+    playersToggle.TextSize = 11.5
     playersToggle.TextColor3 = Color3.fromRGB(240, 200, 255)
     playersToggle.Parent = aimCard
 
-    local pCorner = Instance.new("UICorner")
-    pCorner.CornerRadius = UDim.new(0, 6)
-    pCorner.Parent = playersToggle
+    Instance.new("UICorner", playersToggle).CornerRadius = UDim.new(0, 6)
 
     playersToggle.MouseButton1Click:Connect(function()
         self.TargetPlayers = not self.TargetPlayers
         playersToggle.BackgroundColor3 = self.TargetPlayers and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(30, 24, 56)
-        playersToggle.Text = "👤 Jugadores: " .. (self.TargetPlayers and "SI" or "NO")
+        playersToggle.Text = "👥 Jugadores: " .. (self.TargetPlayers and "SI" or "NO")
     end)
 
     local npcsToggle = Instance.new("TextButton")
-    npcsToggle.Size = UDim2.new(0.44, 0, 0, 32)
-    npcsToggle.Position = UDim2.new(0.51, 0, 0, 66)
+    npcsToggle.Size = UDim2.new(0.44, 0, 0, 30)
+    npcsToggle.Position = UDim2.new(0.51, 0, 0, 62)
     npcsToggle.BackgroundColor3 = self.TargetNPCs and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(30, 24, 56)
-    npcsToggle.Text = "👾 NPCs / Mobs: " .. (self.TargetNPCs and "SI" or "NO")
+    npcsToggle.Text = "👾 NPCs/Mobs: " .. (self.TargetNPCs and "SI" or "NO")
     npcsToggle.Font = Enum.Font.GothamMedium
-    npcsToggle.TextSize = 12
+    npcsToggle.TextSize = 11.5
     npcsToggle.TextColor3 = Color3.fromRGB(240, 200, 255)
     npcsToggle.Parent = aimCard
 
-    local npcCorner = Instance.new("UICorner")
-    npcCorner.CornerRadius = UDim.new(0, 6)
-    npcCorner.Parent = npcsToggle
+    Instance.new("UICorner", npcsToggle).CornerRadius = UDim.new(0, 6)
 
     npcsToggle.MouseButton1Click:Connect(function()
         self.TargetNPCs = not self.TargetNPCs
         npcsToggle.BackgroundColor3 = self.TargetNPCs and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(30, 24, 56)
-        npcsToggle.Text = "👾 NPCs / Mobs: " .. (self.TargetNPCs and "SI" or "NO")
+        npcsToggle.Text = "👾 NPCs/Mobs: " .. (self.TargetNPCs and "SI" or "NO")
     end)
 
+    -- Selector de Parte a Impactar (HumanoidRootPart / Head)
+    local partBtn = Instance.new("TextButton")
+    partBtn.Size = UDim2.new(0.44, 0, 0, 30)
+    partBtn.Position = UDim2.new(0, 12, 0, 100)
+    partBtn.BackgroundColor3 = Color3.fromRGB(15, 12, 28)
+    partBtn.Text = "🎯 Parte: " .. (self.TargetPart == "Head" and "Cabeza" or "Cuerpo")
+    partBtn.Font = Enum.Font.GothamMedium
+    partBtn.TextSize = 11
+    partBtn.TextColor3 = Color3.fromRGB(0, 240, 255)
+    partBtn.Parent = aimCard
+    Instance.new("UICorner", partBtn).CornerRadius = UDim.new(0, 6)
+
+    partBtn.MouseButton1Click:Connect(function()
+        self.TargetPart = (self.TargetPart == "HumanoidRootPart") and "Head" or "HumanoidRootPart"
+        partBtn.Text = "🎯 Parte: " .. (self.TargetPart == "Head" and "Cabeza" or "Cuerpo")
+    end)
+
+    -- Toggle PlayerHighlight (Rojo Puro)
+    local highlightBtn = Instance.new("TextButton")
+    highlightBtn.Size = UDim2.new(0.44, 0, 0, 30)
+    highlightBtn.Position = UDim2.new(0.51, 0, 0, 100)
+    highlightBtn.BackgroundColor3 = self.PlayerHighlightEnabled and Color3.fromRGB(220, 30, 30) or Color3.fromRGB(15, 12, 28)
+    highlightBtn.Text = "🔴 Highlight: " .. (self.PlayerHighlightEnabled and "ON" or "OFF")
+    highlightBtn.Font = Enum.Font.GothamMedium
+    highlightBtn.TextSize = 11
+    highlightBtn.TextColor3 = self.PlayerHighlightEnabled and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(200, 200, 200)
+    highlightBtn.Parent = aimCard
+    Instance.new("UICorner", highlightBtn).CornerRadius = UDim.new(0, 6)
+
+    highlightBtn.MouseButton1Click:Connect(function()
+        self.PlayerHighlightEnabled = not self.PlayerHighlightEnabled
+        highlightBtn.BackgroundColor3 = self.PlayerHighlightEnabled and Color3.fromRGB(220, 30, 30) or Color3.fromRGB(15, 12, 28)
+        highlightBtn.Text = "🔴 Highlight: " .. (self.PlayerHighlightEnabled and "ON" or "OFF")
+        highlightBtn.TextColor3 = self.PlayerHighlightEnabled and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(200, 200, 200)
+        UpdatePlayerHighlight()
+    end)
+
+    -- Selector de Modo de Fijado (Más Cercano 3D / Cursor)
     local modeBtn = Instance.new("TextButton")
     modeBtn.Size = UDim2.new(0.95, -24, 0, 32)
-    modeBtn.Position = UDim2.new(0, 12, 0, 108)
+    modeBtn.Position = UDim2.new(0, 12, 0, 140)
     modeBtn.BackgroundColor3 = Color3.fromRGB(15, 12, 28)
     modeBtn.Text = "Modo: " .. (self.TargetMode == "NearestDistance" and "⚡ Objetivo Más Cercano (3D)" or "🎯 Cercano al Cursor")
     modeBtn.Font = Enum.Font.GothamMedium
-    modeBtn.TextSize = 12
+    modeBtn.TextSize = 11.5
     modeBtn.TextColor3 = Color3.fromRGB(0, 240, 255)
     modeBtn.Parent = aimCard
-
-    local mCorner = Instance.new("UICorner")
-    mCorner.CornerRadius = UDim.new(0, 6)
-    mCorner.Parent = modeBtn
+    Instance.new("UICorner", modeBtn).CornerRadius = UDim.new(0, 6)
 
     modeBtn.MouseButton1Click:Connect(function()
         if self.TargetMode == "NearestDistance" then
@@ -615,6 +874,20 @@ function VortexHub:RenderCombatCategory(contentArea)
             modeBtn.Text = "Modo: ⚡ Objetivo Más Cercano (3D)"
         end
     end)
+
+    -- Aviso Informativo Integrado
+    local infoTag = Instance.new("TextLabel")
+    infoTag.Size = UDim2.new(1, -24, 0, 38)
+    infoTag.Position = UDim2.new(0, 12, 0, 180)
+    infoTag.BackgroundTransparency = 1
+    infoTag.Text = "🛡️ <i>Protección activada: Inmune a Zonas Seguras y jugadores con PvP OFF.</i>"
+    infoTag.RichText = true
+    infoTag.Font = Enum.Font.Gotham
+    infoTag.TextSize = 10.5
+    infoTag.TextColor3 = Color3.fromRGB(150, 150, 160)
+    infoTag.TextWrapped = true
+    infoTag.TextXAlignment = Enum.TextXAlignment.Left
+    infoTag.Parent = aimCard
 
     -- 2. TARJETA RASTREADOR DE JUGADOR (PLAYER TRACKER)
     local trackerCard = Instance.new("Frame")
@@ -648,9 +921,7 @@ function VortexHub:RenderCombatCategory(contentArea)
     trackToggle.TextColor3 = self.TrackerEnabled and Color3.fromRGB(15, 12, 28) or Color3.fromRGB(200, 200, 200)
     trackToggle.Parent = trackerCard
 
-    local trackToggleCorner = Instance.new("UICorner")
-    trackToggleCorner.CornerRadius = UDim.new(0, 14)
-    trackToggleCorner.Parent = trackToggle
+    Instance.new("UICorner", trackToggle).CornerRadius = UDim.new(0, 14)
 
     local metricsText = Instance.new("TextLabel")
     metricsText.Size = UDim2.new(0.95, 0, 0, 75)
@@ -872,11 +1143,11 @@ function VortexHub:BuildUI()
 
     MakeDraggable(mainFrame, header)
     self:RenderCombatCategory(contentArea)
-    print("[VortexHub] UI construida sin duplicados.")
+    print("[VortexHub] UI montada.")
 end
 
 --------------------------------------------------------------------------------
--- 5. INICIALIZACIÓN DE MOTOR Y HOOKS DE REDIRECCIÓN DE ATAQUES
+-- 8. INICIALIZACIÓN
 --------------------------------------------------------------------------------
 
 HookCombatRedirection()
@@ -887,5 +1158,5 @@ if getgenv then
     getgenv().VortexHub = VortexHub
 end
 
-print("[VortexHub] Carga finalizada limpiamente.")
+print("[VortexHub] Auto-Aim Engine v2 con SafeZone/PvP fijados e Highlight Rojo activo.")
 return VortexHub
