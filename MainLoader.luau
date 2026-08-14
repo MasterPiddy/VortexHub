@@ -1,7 +1,8 @@
 --[[
     VortexHub MainLoader.luau - Monolítico Universal Optimizado
     - Filtrado Estricto de NPCs: Solo enemigos de combate (workspace.Enemies), excluye 100% tiendas y misiones.
-    - Orientación Silenciosa: Movimiento 100% natural, el personaje SOLO mira al objetivo cuando se ataca o usa habilidad.
+    - Silent Aim Genuino: Libertad total de movimiento y cámara; el cuerpo NO se fuerza a mirar al objetivo.
+    - Detección precisa de Jugadores (SafeZone corregida con radio real y ForceField check).
     - PlayerHighlight: Resaltado Rojo Puro.
     - Metamethods estables y seguros con hookmetamethod y checkcaller().
     - Cero crasheos y cero bloqueos de pantalla.
@@ -99,65 +100,15 @@ local currentSilentAimTarget = nil
 local activeTargetHighlight = nil
 local BlacklistedPlayers = {}
 
--- Estado de Ataque para Orientación Silenciosa
-local isM1Pressed = false
-local activeSkillKey = nil
-local lastAttackTime = 0
-
-local function TriggerAttackSnap(duration)
-    lastAttackTime = tick() + (duration or 0.25)
-end
-
-Services.UserInputService.InputBegan:Connect(function(input, gameProcessed)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        isM1Pressed = true
-        TriggerAttackSnap(0.20)
-    end
-    if input.KeyCode == Enum.KeyCode.Z then activeSkillKey = "Z"; TriggerAttackSnap(0.35)
-    elseif input.KeyCode == Enum.KeyCode.X then activeSkillKey = "X"; TriggerAttackSnap(0.35)
-    elseif input.KeyCode == Enum.KeyCode.C then activeSkillKey = "C"; TriggerAttackSnap(0.35)
-    elseif input.KeyCode == Enum.KeyCode.V then activeSkillKey = "V"; TriggerAttackSnap(0.35)
-    elseif input.KeyCode == Enum.KeyCode.F then activeSkillKey = "F"; TriggerAttackSnap(0.35)
-    end
-end)
-
-Services.UserInputService.InputEnded:Connect(function(input, gameProcessed)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        isM1Pressed = false
-    end
-    if input.KeyCode == Enum.KeyCode.Z and activeSkillKey == "Z" then activeSkillKey = nil
-    elseif input.KeyCode == Enum.KeyCode.X and activeSkillKey == "X" then activeSkillKey = nil
-    elseif input.KeyCode == Enum.KeyCode.C and activeSkillKey == "C" then activeSkillKey = nil
-    elseif input.KeyCode == Enum.KeyCode.V and activeSkillKey == "V" then activeSkillKey = nil
-    elseif input.KeyCode == Enum.KeyCode.F and activeSkillKey == "F" then activeSkillKey = nil
-    end
-end)
-
 local function AX_ReadPvPState(target)
     if not target or not target:IsA("Player") then return true end
-    local ok, on = pcall(function()
+    local ok, isEnabled = pcall(function()
         local attr = target:GetAttribute("PvpDisabled")
-        if attr ~= nil then return attr ~= true end
-        local main = target.PlayerGui and target.PlayerGui:FindFirstChild("Main")
-        if main then
-            local dis = main:FindFirstChild("PvpDisabled")
-            if dis then return not dis.Visible end
-            local pvp = main:FindFirstChild("Pvp")
-            if pvp then
-                local frame = pvp:FindFirstChild("Frame")
-                if frame then
-                    local btn = frame:FindFirstChild("PvpButton") or frame:FindFirstChildOfClass("TextButton")
-                    if btn and btn:IsA("TextButton") then
-                        local txt = tostring(btn.Text or ""):upper()
-                        if txt:find("OFF") then return false end
-                        if txt:find("ON") then return true end
-                    end
-                end
-            end
-        end
+        if attr == true then return false end
         return true
     end)
-    return not ok or on
+    if not ok then return true end
+    return isEnabled
 end
 
 local function AX_InSafeZone(target)
@@ -165,33 +116,37 @@ local function AX_InSafeZone(target)
     local ok, inZone = pcall(function()
         local char = target.Character
         if not char then return false end
-        local hrp = char:FindFirstChild("HumanoidRootPart")
+        
+        -- Si tiene ForceField de spawn activo, está protegido
+        if char:FindFirstChildOfClass("ForceField") then return true end
+
+        local hrp = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Head")
         if not hrp then return false end
         local wo = Services.Workspace:FindFirstChild("_WorldOrigin")
         if not wo then return false end
 
+        -- 1. Zonas Seguras Reales (_WorldOrigin.SafeZones)
         local safeZones = wo:FindFirstChild("SafeZones")
         if safeZones then
             for _, zone in pairs(safeZones:GetChildren()) do
-                local mesh = zone:FindFirstChild("Mesh")
-                if mesh and mesh:IsA("SpecialMesh") then
-                    local realDiameter = zone.Size.X * mesh.Scale.X
-                    local radius = realDiameter / 2
-                    if radius and radius > 0 then
-                        local dist = (zone.Position - hrp.Position).Magnitude
-                        if dist <= radius then return true end
-                    end
+                local mesh = zone:FindFirstChild("Mesh") or zone:FindFirstChildOfClass("SpecialMesh")
+                local scaleX = (mesh and mesh.Scale.X) or 1
+                local radius = (zone.Size.X * scaleX) / 2
+                if radius and radius > 0 then
+                    local dist = (zone.Position - hrp.Position).Magnitude
+                    if dist <= radius then return true end
                 end
             end
         end
 
+        -- 2. Spawns directos (Radio real de 40 studs)
         local spawns = wo:FindFirstChild("PlayerSpawns")
         if spawns then
-            local folder = spawns:FindFirstChild(tostring(target.Team)) or spawns:FindFirstChild("Pirates")
+            local folder = spawns:FindFirstChild(tostring(target.Team)) or spawns:FindFirstChild("Pirates") or spawns:FindFirstChild("Marines")
             if folder then
                 for _, sp in pairs(folder:GetChildren()) do
-                    local part = sp:FindFirstChild("Part")
-                    if part and (hrp.Position - part.Position).Magnitude <= 400 then
+                    local part = sp:FindFirstChild("Part") or (sp:IsA("BasePart") and sp)
+                    if part and (hrp.Position - part.Position).Magnitude <= 40 then
                         return true
                     end
                 end
@@ -273,7 +228,7 @@ local function GetClosestTargetToCenter()
         end
     end
 
-    -- 2. Jugadores
+    -- 2. Escaneo de Jugadores
     if _G.G_SilentAimTargetPlayers then
         for _, p in ipairs(Services.Players:GetPlayers()) do
             if p ~= LocalPlayer and p.Character then
@@ -282,7 +237,7 @@ local function GetClosestTargetToCenter()
         end
     end
 
-    -- 3. Mobs / NPCs de Combate Exclusivamente (workspace.Enemies excluye 100% tiendas y misiones)
+    -- 3. Escaneo de Mobs / NPCs de Combate Exclusivamente (workspace.Enemies)
     if _G.G_SilentAimTargetMobs then
         local enemies = Services.Workspace:FindFirstChild("Enemies")
         if enemies then
@@ -326,23 +281,11 @@ local function updateTargetHighlight(targetChar)
     end
 end
 
--- Bucle de RenderStepped con Orientación SILENCIOSA
+-- Bucle de RenderStepped con Silent Aim Genuino (Libertad total de movimiento)
 Services.RunService.RenderStepped:Connect(function()
     pcall(function()
         if _G.G_SilentAimSkill then
             currentSilentAimTarget = GetClosestTargetToCenter()
-
-            -- Orientación: Solo gira hacia el objetivo cuando se ataca o usa una habilidad
-            local isAttackingNow = isM1Pressed or (activeSkillKey ~= nil) or (tick() < lastAttackTime)
-            if isAttackingNow and currentSilentAimTarget and currentSilentAimTarget.Parent then
-                local myChar = LocalPlayer and LocalPlayer.Character
-                local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
-                if myRoot then
-                    local targetPos = currentSilentAimTarget.Position
-                    local lookAt = Vector3.new(targetPos.X, myRoot.Position.Y, targetPos.Z)
-                    myRoot.CFrame = CFrame.new(myRoot.Position, lookAt)
-                end
-            end
 
             if _G.G_PlayerHighlight and currentSilentAimTarget then
                 local targetChar = currentSilentAimTarget.Parent
@@ -432,7 +375,6 @@ if hookmetamethod then
                     end
 
                     if _G.G_SilentAimSkill and currentSilentAimTarget and IsCurrentToolAimbotAllowed() and IsCurrentSlotAimbotAllowed(calledSkill) then
-                        TriggerAttackSnap(0.25)
                         local activePos = currentSilentAimTarget.Position
 
                         if self.Name == "RE/RegisterHit" or self.Name == "RegisterHit" or self.Name:find("RegisterHit") then
@@ -504,7 +446,6 @@ else
                     end
 
                     if _G.G_SilentAimSkill and currentSilentAimTarget and IsCurrentToolAimbotAllowed() and IsCurrentSlotAimbotAllowed(calledSkill) then
-                        TriggerAttackSnap(0.25)
                         local activePos = currentSilentAimTarget.Position
 
                         if self.Name == "RE/RegisterHit" or self.Name == "RegisterHit" or self.Name:find("RegisterHit") then
