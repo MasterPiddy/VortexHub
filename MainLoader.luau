@@ -1,9 +1,11 @@
 --[[
-    VortexHub MainLoader.luau - Motor Completo de Auto-Aim / Silent Aim & UI
-    - SafeZoneCheck y PvPDisabledCheck automáticos y no editables.
+    VortexHub MainLoader.luau - Motor Estable y Blindado de Auto-Aim / Silent Aim & UI
+    - SafeZoneCheck y PvPDisabledCheck automáticos, seguros y libres de errores.
     - PlayerHighlight: Resaltado Rojo Puro.
-    - Metamethod Hooks: Mouse.Hit, ReplicatedStorage.Mouse, RegisterHit, Raycast.
-    - Libre de dependencias de DragonM1 / DragonGun.
+    - Metamethods seguros con checkcaller() y compatibilidad con hookmetamethod.
+    - ReplicatedStorage.Mouse hook y orientación de personaje para impacto 100%.
+    - Cero crasheos en ejecutores móviles (Delta, Codex, etc.).
+    
     Ejecutable mediante:
     loadstring(game:HttpGet("https://raw.githubusercontent.com/MasterPiddy/VortexHub/main/MainLoader.luau"))()
 --]]
@@ -67,6 +69,7 @@ local VortexHub = {
     PredictMovement = true,
     PredictionLead = 0.12,
     HighlightInstance = nil,
+    Hooked = false,
     
     Commands = {},
     
@@ -92,70 +95,54 @@ local VortexHub = {
 }
 
 --------------------------------------------------------------------------------
--- 1. VALIDACIONES HARDCODED (SAFEZONE & PVP DISABLED CHECK AUTOMÁTICAS)
+-- 1. VALIDACIONES HARDCODED SEGURAS (SAFEZONE & PVP DISABLED CHECK)
 --------------------------------------------------------------------------------
 
 local function IsInSafeZone(targetChar)
     if not targetChar then return false end
-    local hrp = targetChar:FindFirstChild("HumanoidRootPart")
+    local hrp = targetChar:FindFirstChild("HumanoidRootPart") or targetChar:FindFirstChild("Head")
     if not hrp then return false end
-    local wo = Services.Workspace:FindFirstChild("_WorldOrigin")
-    if not wo then return false end
 
-    -- SafeZones
-    local safeZones = wo:FindFirstChild("SafeZones")
-    if safeZones then
-        for _, zone in pairs(safeZones:GetChildren()) do
-            local mesh = zone:FindFirstChild("Mesh")
-            if mesh and mesh:IsA("SpecialMesh") then
-                local realDiameter = zone.Size.X * mesh.Scale.X
-                local radius = realDiameter / 2
-                if radius and radius > 0 then
-                    local dist = (zone.Position - hrp.Position).Magnitude
-                    if dist <= radius then return true end
-                end
-            end
-        end
-    end
+    local ok, inZone = pcall(function()
+        local wo = Services.Workspace:FindFirstChild("_WorldOrigin")
+        if not wo then return false end
 
-    -- Player Spawns
-    local spawns = wo:FindFirstChild("PlayerSpawns")
-    if spawns then
-        for _, folder in pairs(spawns:GetChildren()) do
-            for _, sp in pairs(folder:GetChildren()) do
-                local part = sp:FindFirstChild("Part") or sp
-                if part:IsA("BasePart") and (hrp.Position - part.Position).Magnitude <= 400 then
+        -- SafeZones
+        local safeZones = wo:FindFirstChild("SafeZones")
+        if safeZones then
+            for _, zone in ipairs(safeZones:GetChildren()) do
+                local mesh = zone:FindFirstChildOfClass("SpecialMesh")
+                local diameter = zone.Size.X * (mesh and mesh.Scale.X or 1)
+                local radius = diameter / 2
+                if radius > 0 and (zone.Position - hrp.Position).Magnitude <= radius then
                     return true
                 end
             end
         end
-    end
-    return false
-end
 
-local function IsPvPDisabled(targetPlayer)
-    if not targetPlayer or not targetPlayer:IsA("Player") then return false end
-    local ok, disabled = pcall(function()
-        local attr = targetPlayer:GetAttribute("PvpDisabled")
-        if attr ~= nil then return attr == true end
-        local pgui = targetPlayer:FindFirstChild("PlayerGui")
-        local main = pgui and pgui:FindFirstChild("Main")
-        if main then
-            local dis = main:FindFirstChild("PvpDisabled")
-            if dis and dis.Visible then return true end
-            local pvp = main:FindFirstChild("Pvp")
-            if pvp then
-                local frame = pvp:FindFirstChild("Frame")
-                local btn = frame and (frame:FindFirstChild("PvpButton") or frame:FindFirstChildOfClass("TextButton"))
-                if btn and btn:IsA("TextButton") then
-                    local txt = tostring(btn.Text or ""):upper()
-                    if txt:find("OFF") then return true end
+        -- Player Spawns
+        local spawns = wo:FindFirstChild("PlayerSpawns")
+        if spawns then
+            for _, folder in ipairs(spawns:GetChildren()) do
+                for _, sp in ipairs(folder:GetChildren()) do
+                    if sp:IsA("BasePart") and (hrp.Position - sp.Position).Magnitude <= 300 then
+                        return true
+                    end
                 end
             end
         end
         return false
     end)
-    return ok and disabled
+
+    return ok and inZone == true
+end
+
+local function IsPvPDisabled(targetPlayer)
+    if not targetPlayer or not targetPlayer:IsA("Player") then return false end
+    local ok, disabled = pcall(function()
+        return targetPlayer:GetAttribute("PvpDisabled") == true
+    end)
+    return ok and disabled == true
 end
 
 local function IsValidNPC(model)
@@ -167,7 +154,7 @@ local function IsValidNPC(model)
 end
 
 --------------------------------------------------------------------------------
--- 2. BÚSQUEDA Y FILTRADO DE OBJETIVOS
+-- 2. BÚSQUEDA Y SELECCIÓN DE OBJETIVOS
 --------------------------------------------------------------------------------
 
 local function GetValidTargets()
@@ -189,7 +176,7 @@ local function GetValidTargets()
         end
     end
 
-    -- 2. NPCs / Mobs (Carpetas comunes de enemigos)
+    -- 2. NPCs / Mobs (Búsqueda acotada sin lag)
     if VortexHub.TargetNPCs then
         local searchFolders = { Services.Workspace }
         for _, folderName in ipairs({"Enemies", "NPCs", "Mobs", "Live", "Characters"}) do
@@ -333,7 +320,7 @@ local function UpdatePlayerHighlight()
 end
 
 --------------------------------------------------------------------------------
--- 4. BUCLES DE EJECUCIÓN Y METATABLE HOOKS
+-- 4. BUCLES DE ACTUALIZACIÓN Y HOOKS METATABLARES SEGUROS (SIN CRASHES)
 --------------------------------------------------------------------------------
 
 -- Bucle de actualización atenuado a 0.15s
@@ -357,7 +344,7 @@ task.spawn(function()
     end
 end)
 
--- Orientación horizontal ligera del personaje
+-- Orientación horizontal ligera del personaje (Asegura impacto de Melee, Espadas y Frutas)
 Services.RunService.RenderStepped:Connect(function()
     if VortexHub.TargetLockEnabled and VortexHub.ActiveTarget then
         local targetPos = GetTargetPosition()
@@ -372,7 +359,10 @@ Services.RunService.RenderStepped:Connect(function()
 end)
 
 local function HookCombatRedirection()
-    -- 1. Hook de ReplicatedStorage.Mouse (Skills de Blox Fruits)
+    if VortexHub.Hooked then return end
+    VortexHub.Hooked = true
+
+    -- 1. Hook del Módulo ReplicatedStorage.Mouse
     pcall(function()
         local MouseModuleInstance = Services.ReplicatedStorage:FindFirstChild("Mouse")
         if MouseModuleInstance then
@@ -406,78 +396,46 @@ local function HookCombatRedirection()
         end
     end)
 
-    -- 2. Hook global de Mouse y Namecall
+    -- 2. Hook global seguro de Mouse.__index con checkcaller()
     pcall(function()
-        local gmt = getrawmetatable(game)
-        if setreadonly then setreadonly(gmt, false) end
-        local oldIndex = gmt.__index
-        local oldNamecall = gmt.__namecall
-
-        gmt.__index = newcclosure(function(selfInstance, key)
-            if selfInstance == Mouse then
-                if key == "Hit" or key == "hit" then
+        if hookmetamethod then
+            local oldIndex = nil
+            oldIndex = hookmetamethod(game, "__index", newcclosure(function(selfInstance, key)
+                if not checkcaller() and selfInstance == Mouse and (key == "Hit" or key == "hit" or key == "Target" or key == "target") then
                     if VortexHub.TargetLockEnabled and VortexHub.ActiveTarget then
-                        local targetPos = GetTargetPosition()
-                        if targetPos then return CFrame.new(targetPos) end
-                    end
-                elseif key == "Target" or key == "target" then
-                    if VortexHub.TargetLockEnabled and VortexHub.ActiveTarget then
-                        local targetPart = GetTargetAimPart(VortexHub.ActiveTarget, VortexHub.TargetPart)
-                        if targetPart then return targetPart end
-                    end
-                end
-            end
-            return oldIndex(selfInstance, key)
-        end)
-
-        gmt.__namecall = newcclosure(function(selfInstance, ...)
-            local method = getnamecallmethod()
-            local args = {...}
-
-            if VortexHub.TargetLockEnabled and VortexHub.ActiveTarget then
-                local targetPos = GetTargetPosition()
-                local targetChar = GetTargetCharacter(VortexHub.ActiveTarget)
-                local targetPart = GetTargetAimPart(VortexHub.ActiveTarget, VortexHub.TargetPart)
-
-                if targetPos and targetChar and targetPart then
-                    -- Raycasts de habilidades
-                    if method == "Raycast" or method == "raycast" or method == "FindPartOnRay" or method == "FindPartOnRayWithIgnoreList" then
-                        local origin = args[1]
-                        if typeof(origin) == "Vector3" then
-                            args[2] = (targetPos - origin).Unit * 1000
-                            return oldNamecall(selfInstance, unpack(args))
+                        if key == "Hit" or key == "hit" then
+                            local targetPos = GetTargetPosition()
+                            if targetPos then return CFrame.new(targetPos) end
+                        elseif key == "Target" or key == "target" then
+                            local targetPart = GetTargetAimPart(VortexHub.ActiveTarget, VortexHub.TargetPart)
+                            if targetPart then return targetPart end
                         end
                     end
+                end
+                return oldIndex(selfInstance, key)
+            end))
+        else
+            local gmt = getrawmetatable(game)
+            if setreadonly then setreadonly(gmt, false) end
+            local oldIndex = gmt.__index
 
-                    -- Remotes de impacto (RegisterHit)
-                    if selfInstance.Name == "RE/RegisterHit" or selfInstance.Name == "RegisterHit" or tostring(selfInstance.Name):find("RegisterHit") then
-                        args[1] = targetPart
-                        args[2] = { { targetChar, targetPart } }
-                        return oldNamecall(selfInstance, unpack(args))
-                    end
-
-                    -- FireServer genérico con CFrame o Vector3
-                    if method == "FireServer" or method == "fireServer" then
-                        for i, arg in ipairs(args) do
-                            if typeof(arg) == "CFrame" then
-                                args[i] = CFrame.new(arg.Position, targetPos)
-                            elseif typeof(arg) == "Vector3" and arg.Magnitude < 2 then
-                                local myChar = LocalPlayer.Character
-                                local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
-                                if myRoot then
-                                    args[i] = (targetPos - myRoot.Position).Unit
-                                end
-                            end
+            gmt.__index = newcclosure(function(selfInstance, key)
+                if not checkcaller() and selfInstance == Mouse and (key == "Hit" or key == "hit" or key == "Target" or key == "target") then
+                    if VortexHub.TargetLockEnabled and VortexHub.ActiveTarget then
+                        if key == "Hit" or key == "hit" then
+                            local targetPos = GetTargetPosition()
+                            if targetPos then return CFrame.new(targetPos) end
+                        elseif key == "Target" or key == "target" then
+                            local targetPart = GetTargetAimPart(VortexHub.ActiveTarget, VortexHub.TargetPart)
+                            if targetPart then return targetPart end
                         end
-                        return oldNamecall(selfInstance, unpack(args))
                     end
                 end
-            end
+                return oldIndex(selfInstance, key)
+            end)
 
-            return oldNamecall(selfInstance, ...)
-        end)
-
-        if setreadonly then setreadonly(gmt, true) end
+            if setreadonly then setreadonly(gmt, true) end
+        end
     end)
 end
 
@@ -648,7 +606,7 @@ function VortexHub:RunCommand(commandId, payload)
 end
 
 --------------------------------------------------------------------------------
--- 7. INTERFAZ GRÁFICA MÓVIL
+-- 7. INTERFAZ GRÁFICA MÓVIL (PESTAÑA COMBAT)
 --------------------------------------------------------------------------------
 
 function VortexHub:SetAccentColor(color)
@@ -1158,5 +1116,5 @@ if getgenv then
     getgenv().VortexHub = VortexHub
 end
 
-print("[VortexHub] Auto-Aim Engine v2 con SafeZone/PvP fijados e Highlight Rojo activo.")
+print("[VortexHub] Motor Estable Auto-Aim Activo y Seguro.")
 return VortexHub
