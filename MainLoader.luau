@@ -1,5 +1,5 @@
 --[[
-    VortexHub MainLoader.luau - Monolítico Ultracompacto & Libre de Crashes
+    VortexHub MainLoader.luau - Limpieza de Duplicados & Soporte Completo gethui()
     Ejecutable mediante:
     loadstring(game:HttpGet("https://raw.githubusercontent.com/MasterPiddy/VortexHub/main/MainLoader.luau"))()
 --]]
@@ -20,14 +20,25 @@ local Services = {
 local LocalPlayer = Services.Players.LocalPlayer
 local Mouse = LocalPlayer:GetMouse()
 
+-- Limpieza exhaustiva de cualquier UI duplicada en gethui(), CoreGui o PlayerGui
 local function CleanOldUI()
-    local oldGuis = {
-        LocalPlayer:FindFirstChild("PlayerGui") and LocalPlayer.PlayerGui:FindFirstChild("VortexHubScreenGui"),
-        pcall(function() return Services.CoreGui:FindFirstChild("VortexHubScreenGui") end) and Services.CoreGui:FindFirstChild("VortexHubScreenGui")
-    }
-    for _, gui in ipairs(oldGuis) do
-        if gui and typeof(gui) == "Instance" then
-            pcall(function() gui:Destroy() end)
+    local targetContainers = {}
+
+    if gethui then
+        pcall(function() table.insert(targetContainers, gethui()) end)
+    end
+    pcall(function() table.insert(targetContainers, Services.CoreGui) end)
+    if LocalPlayer:FindFirstChild("PlayerGui") then
+        table.insert(targetContainers, LocalPlayer.PlayerGui)
+    end
+
+    for _, container in ipairs(targetContainers) do
+        if container and typeof(container) == "Instance" then
+            for _, child in ipairs(container:GetChildren()) do
+                if child.Name == "VortexHubScreenGui" or child.Name == "VortexLogoButton" then
+                    pcall(function() child:Destroy() end)
+                end
+            end
         end
     end
 end
@@ -43,7 +54,7 @@ local VortexHub = {
     TargetLockEnabled = false,
     TargetPlayers = true,
     TargetNPCs = true,
-    TargetMode = "NearestDistance", -- "NearestDistance", "NearestCursor", "Manual"
+    TargetMode = "NearestDistance",
     ActiveTarget = nil,
     PredictMovement = true,
     PredictionLead = 0.12,
@@ -72,7 +83,7 @@ local VortexHub = {
 }
 
 --------------------------------------------------------------------------------
--- 1. MOTOR OPTIMIZADO TARGET LOCK (JUGADORES & NPCS - SIN LAG / SIN CRASH)
+-- 1. MOTOR OPTIMIZADO TARGET LOCK (JUGADORES & NPCS)
 --------------------------------------------------------------------------------
 
 local function IsValidNPC(model)
@@ -83,12 +94,10 @@ local function IsValidNPC(model)
     return (hum and root and hum.Health > 0)
 end
 
--- Búsqueda de objetivos optimizada
 local function GetValidTargets()
     local targets = {}
     local myChar = LocalPlayer.Character
 
-    -- 1. Jugadores
     if VortexHub.TargetPlayers then
         for _, player in ipairs(Services.Players:GetPlayers()) do
             if player ~= LocalPlayer and player.Character then
@@ -101,7 +110,6 @@ local function GetValidTargets()
         end
     end
 
-    -- 2. NPCs / Mobs (Búsqueda acotada a carpetas conocidas o primer nivel de Workspace)
     if VortexHub.TargetNPCs then
         local searchFolders = { Services.Workspace }
         for _, folderName in ipairs({"Enemies", "NPCs", "Mobs", "Live", "Characters"}) do
@@ -194,7 +202,6 @@ local function GetTargetPosition()
     return targetPos
 end
 
--- Hilo asíncrono para actualizar objetivo cada 0.15s (Cero lag / Cero crashes)
 task.spawn(function()
     while task.wait(0.15) do
         if VortexHub.TargetLockEnabled then
@@ -209,7 +216,6 @@ task.spawn(function()
     end
 end)
 
--- Orientación de personaje ligera en RenderStepped
 Services.RunService.RenderStepped:Connect(function()
     if VortexHub.TargetLockEnabled and VortexHub.ActiveTarget then
         local targetPos = GetTargetPosition()
@@ -251,7 +257,7 @@ local function HookCombatRedirection()
 end
 
 --------------------------------------------------------------------------------
--- 2. MÓDULO PLAYER TRACKER (Etiqueta ESP Compacta & Corregida)
+-- 2. MÓDULO PLAYER TRACKER (Etiqueta ESP Compacta)
 --------------------------------------------------------------------------------
 local function ClearTrackerMarker()
     if VortexHub.TrackerBillboard then
@@ -365,7 +371,6 @@ VortexHub.Commands["target_lock"] = function(args)
     end
 end
 
--- Lógica corregida de Player Tracker (Permite apagar/encender limpiamente)
 VortexHub.Commands["player_tracker"] = function(args)
     if typeof(args) == "table" then
         if args.enabled ~= nil then
@@ -378,7 +383,6 @@ VortexHub.Commands["player_tracker"] = function(args)
             return
         end
 
-        -- Si se activó:
         local found = nil
         if args.targetPlayer and args.targetPlayer ~= "" then
             for _, player in ipairs(Services.Players:GetPlayers()) do
@@ -417,7 +421,7 @@ function VortexHub:RunCommand(commandId, payload)
 end
 
 --------------------------------------------------------------------------------
--- 4. INTERFAZ GRÁFICA MÓVIL (PESTAÑA COMBAT)
+-- 4. INTERFAZ GRÁFICA MÓVIL (SIN BOTONES DUPLICADOS)
 --------------------------------------------------------------------------------
 
 function VortexHub:SetAccentColor(color)
@@ -552,7 +556,7 @@ function VortexHub:RenderCombatCategory(contentArea)
     playersToggle.Size = UDim2.new(0.44, 0, 0, 32)
     playersToggle.Position = UDim2.new(0, 12, 0, 66)
     playersToggle.BackgroundColor3 = self.TargetPlayers and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(30, 24, 56)
-    playersToggle.Text = "👥 Jugadores: " .. (self.TargetPlayers and "SI" or "NO")
+    playersToggle.Text = "👤 Jugadores: " .. (self.TargetPlayers and "SI" or "NO")
     playersToggle.Font = Enum.Font.GothamMedium
     playersToggle.TextSize = 12
     playersToggle.TextColor3 = Color3.fromRGB(240, 200, 255)
@@ -565,7 +569,7 @@ function VortexHub:RenderCombatCategory(contentArea)
     playersToggle.MouseButton1Click:Connect(function()
         self.TargetPlayers = not self.TargetPlayers
         playersToggle.BackgroundColor3 = self.TargetPlayers and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(30, 24, 56)
-        playersToggle.Text = "👥 Jugadores: " .. (self.TargetPlayers and "SI" or "NO")
+        playersToggle.Text = "👤 Jugadores: " .. (self.TargetPlayers and "SI" or "NO")
     end)
 
     local npcsToggle = Instance.new("TextButton")
@@ -868,7 +872,7 @@ function VortexHub:BuildUI()
 
     MakeDraggable(mainFrame, header)
     self:RenderCombatCategory(contentArea)
-    print("[VortexHub] UI construida e impresa en pantalla exitosamente.")
+    print("[VortexHub] UI construida sin duplicados.")
 end
 
 --------------------------------------------------------------------------------
@@ -883,5 +887,5 @@ if getgenv then
     getgenv().VortexHub = VortexHub
 end
 
-print("[VortexHub] Proceso de carga finalizado libre de lag/crashes.")
+print("[VortexHub] Carga finalizada limpiamente.")
 return VortexHub
