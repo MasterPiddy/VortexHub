@@ -1,10 +1,10 @@
 --[[
-    TargetLock.luau - Motor de Auto-Aim con Workaround Administrativo de Acceso a PlayerGui
-    - Multi-Tier PlayerGui Inspector: Lee de forma segura PlayerGui (si está disponible/admin), Character Overheads y Atributos.
-    - SafeZoneCheck y PvPDisabledCheck automáticos, seguros y libres de errores.
-    - PlayerHighlight: Resaltado Rojo Puro.
-    - Metamethods seguros con checkcaller() y compatibilidad con hookmetamethod.
-    - ReplicatedStorage.Mouse hook y orientación de personaje para impacto 100%.
+    TargetLock.luau - Motor Universal de Auto-Aim / Silent Aim (Basado en Sacred AHK)
+    - Validaciones Hardcoded: SafeZone Check & PvP Disabled Check automáticas.
+    - PlayerHighlight: Resaltador en Rojo Puro (Pure Red).
+    - Metamethods de Sacred AHK: __index, __namecall (Raycast, RegisterHit, ShootGunEvent) con protección checkcaller().
+    - Hook de ReplicatedStorage.Mouse para soporte total de frutas y habilidades.
+    - Soporte completo para Jugadores & NPCs/Mobs.
 --]]
 
 local Services = {
@@ -24,44 +24,72 @@ local TargetLock = {
     TargetMode = "NearestDistance", -- "NearestDistance", "NearestCursor", "Manual"
     TargetPart = "HumanoidRootPart", -- "HumanoidRootPart", "Head"
     PlayerHighlightEnabled = false,
-    
+    MaxRange = 3500,
+
     CurrentTarget = nil,    -- Player o Model NPC
     PredictMovement = true,
     PredictionLead = 0.12,
-    
+
     HighlightInstance = nil,
     Hooked = false
 }
 
 --------------------------------------------------------------------------------
--- 1. WORKAROUND ADMINISTRATIVO DE ACCESO A PLAYERGUI & DATOS DE JUGADORES
+-- 1. VALIDACIONES HARDCODED (SAFEZONE & PVP DISABLED CHECK)
 --------------------------------------------------------------------------------
 
--- Intenta obtener el PlayerGui de cualquier jugador de forma segura y tolerante a fallos
-function TargetLock:GetPlayerGui(targetPlayer)
-    if not targetPlayer or not targetPlayer:IsA("Player") then return nil end
-    if targetPlayer == LocalPlayer then
-        return LocalPlayer:FindFirstChild("PlayerGui")
-    end
+-- SafeZone Check (Sacred AHK)
+function TargetLock:IsInSafeZone(targetChar)
+    if not targetChar then return false end
+    local hrp = targetChar:FindFirstChild("HumanoidRootPart") or targetChar:FindFirstChild("Head")
+    if not hrp then return false end
 
-    local pgui = nil
-    pcall(function()
-        pgui = targetPlayer:FindFirstChild("PlayerGui")
+    local ok, inZone = pcall(function()
+        local wo = Services.Workspace:FindFirstChild("_WorldOrigin")
+        if not wo then return false end
+
+        local safeZones = wo:FindFirstChild("SafeZones")
+        if safeZones then
+            for _, zone in pairs(safeZones:GetChildren()) do
+                local mesh = zone:FindFirstChild("Mesh") or zone:FindFirstChildOfClass("SpecialMesh")
+                if mesh then
+                    local realDiameter = zone.Size.X * (mesh.Scale and mesh.Scale.X or 1)
+                    local radius = realDiameter / 2
+                    if radius and radius > 0 then
+                        local dist = (zone.Position - hrp.Position).Magnitude
+                        if dist <= radius then return true end
+                    end
+                end
+            end
+        end
+
+        local spawns = wo:FindFirstChild("PlayerSpawns")
+        if spawns then
+            for _, folder in pairs(spawns:GetChildren()) do
+                for _, sp in pairs(folder:GetChildren()) do
+                    local part = sp:FindFirstChild("Part") or sp
+                    if part:IsA("BasePart") and (hrp.Position - part.Position).Magnitude <= 300 then
+                        return true
+                    end
+                end
+            end
+        end
+        return false
     end)
-    return pgui
+    return ok and inZone == true
 end
 
--- Determina el estado PvP inspeccionando PlayerGui, Overheads y Atributos de red
-local function IsPvPDisabled(targetPlayer)
+-- PvP Disabled Check (Sacred AHK Multi-Tier con Acceso Seguro)
+function TargetLock:IsPvPDisabled(targetPlayer)
     if not targetPlayer or not targetPlayer:IsA("Player") then return false end
-    
-    -- Tier 1: Comprobación de Atributos de Red
+
+    -- 1. Atributos de Red
     local okAttr, attrDisabled = pcall(function()
         return targetPlayer:GetAttribute("PvpDisabled") == true
     end)
     if okAttr and attrDisabled then return true end
 
-    -- Tier 2: Acceso Seguro a PlayerGui (Admin Workaround)
+    -- 2. Acceso a PlayerGui (Admin / Replicated Workaround)
     local okGui, guiDisabled = pcall(function()
         local pgui = targetPlayer:FindFirstChild("PlayerGui")
         if pgui then
@@ -69,7 +97,7 @@ local function IsPvPDisabled(targetPlayer)
             if main then
                 local dis = main:FindFirstChild("PvpDisabled")
                 if dis and dis.Visible then return true end
-                
+
                 local pvp = main:FindFirstChild("Pvp")
                 if pvp then
                     local frame = pvp:FindFirstChild("Frame")
@@ -86,7 +114,7 @@ local function IsPvPDisabled(targetPlayer)
     end)
     if okGui and guiDisabled then return true end
 
-    -- Tier 3: Comprobación de Overheads / Billboards en el Personaje (Head)
+    -- 3. Overheads en Head
     local okHead, headDisabled = pcall(function()
         local char = targetPlayer.Character
         local head = char and char:FindFirstChild("Head")
@@ -111,146 +139,12 @@ local function IsPvPDisabled(targetPlayer)
     return false
 end
 
--- Verificar si el personaje está dentro de Zona Segura o Spawn
-local function IsInSafeZone(targetChar)
-    if not targetChar then return false end
-    local hrp = targetChar:FindFirstChild("HumanoidRootPart") or targetChar:FindFirstChild("Head")
-    if not hrp then return false end
-
-    local ok, inZone = pcall(function()
-        local wo = Services.Workspace:FindFirstChild("_WorldOrigin")
-        if not wo then return false end
-
-        -- SafeZones
-        local safeZones = wo:FindFirstChild("SafeZones")
-        if safeZones then
-            for _, zone in ipairs(safeZones:GetChildren()) do
-                local mesh = zone:FindFirstChildOfClass("SpecialMesh")
-                local diameter = zone.Size.X * (mesh and mesh.Scale.X or 1)
-                local radius = diameter / 2
-                if radius > 0 and (zone.Position - hrp.Position).Magnitude <= radius then
-                    return true
-                end
-            end
-        end
-
-        -- Player Spawns
-        local spawns = wo:FindFirstChild("PlayerSpawns")
-        if spawns then
-            for _, folder in ipairs(spawns:GetChildren()) do
-                for _, sp in ipairs(folder:GetChildren()) do
-                    if sp:IsA("BasePart") and (hrp.Position - sp.Position).Magnitude <= 300 then
-                        return true
-                    end
-                end
-            end
-        end
-        return false
-    end)
-
-    return ok and inZone == true
-end
-
-local function IsValidNPC(model)
-    if not model or not model:IsA("Model") then return false end
-    if Services.Players:GetPlayerFromCharacter(model) then return false end
-    local hum = model:FindFirstChildOfClass("Humanoid")
-    local root = model:FindFirstChild("HumanoidRootPart") or model:FindFirstChild("Torso") or model.PrimaryPart
-    return (hum and root and hum.Health > 0)
-end
-
 --------------------------------------------------------------------------------
--- 2. BÚSQUEDA Y SELECCIÓN DE OBJETIVOS CON FILTROS ACTIVOS
+-- 2. SELECCIÓN DE OBJETIVOS (SACRED AHK ENGINE)
 --------------------------------------------------------------------------------
 
-function TargetLock:GetValidTargets()
-    local targets = {}
-    local myChar = LocalPlayer.Character
-
-    -- 1. Jugadores (Con filtro SafeZone & PvP Multi-Tier)
-    if self.TargetPlayers then
-        for _, player in ipairs(Services.Players:GetPlayers()) do
-            if player ~= LocalPlayer and player.Character then
-                if not IsPvPDisabled(player) and not IsInSafeZone(player.Character) then
-                    local root = player.Character:FindFirstChild("HumanoidRootPart")
-                    local hum = player.Character:FindFirstChildOfClass("Humanoid")
-                    if root and hum and hum.Health > 0 then
-                        table.insert(targets, { Instance = player, Character = player.Character, Root = root, IsPlayer = true })
-                    end
-                end
-            end
-        end
-    end
-
-    -- 2. NPCs / Mobs (Búsqueda acotada y optimizada)
-    if self.TargetNPCs then
-        local searchFolders = { Services.Workspace }
-        for _, folderName in ipairs({"Enemies", "NPCs", "Mobs", "Live", "Characters"}) do
-            local f = Services.Workspace:FindFirstChild(folderName)
-            if f then table.insert(searchFolders, f) end
-        end
-
-        local checked = {}
-        for _, folder in ipairs(searchFolders) do
-            for _, obj in ipairs(folder:GetChildren()) do
-                if obj:IsA("Model") and obj ~= myChar and not checked[obj] then
-                    checked[obj] = true
-                    if IsValidNPC(obj) and not IsInSafeZone(obj) then
-                        local root = obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChild("Torso") or obj.PrimaryPart
-                        table.insert(targets, { Instance = obj, Character = obj, Root = root, IsPlayer = false })
-                    end
-                end
-            end
-        end
-    end
-
-    return targets
-end
-
-function TargetLock:GetNearestTargetByDistance()
-    local myChar = LocalPlayer.Character
-    local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
-    if not myRoot then return nil end
-
-    local targets = self:GetValidTargets()
-    local closest = nil
-    local shortestDistance = math.huge
-
-    for _, t in ipairs(targets) do
-        local dist = (t.Root.Position - myRoot.Position).Magnitude
-        if dist < shortestDistance then
-            shortestDistance = dist
-            closest = t.Instance
-        end
-    end
-
-    return closest
-end
-
-function TargetLock:GetNearestTargetByCursor()
-    local camera = Services.Workspace.CurrentCamera
-    if not camera then return nil end
-
-    local mousePos = Vector2.new(Mouse.X, Mouse.Y)
-    local targets = self:GetValidTargets()
-    local closest = nil
-    local shortestDistance = math.huge
-
-    for _, t in ipairs(targets) do
-        local screenPos, onScreen = camera:WorldToViewportPoint(t.Root.Position)
-        if onScreen then
-            local dist = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
-            if dist < shortestDistance then
-                shortestDistance = dist
-                closest = t.Instance
-            end
-        end
-    end
-
-    return closest
-end
-
-local function GetTargetCharacter(target)
+function TargetLock:GetTargetCharacter(target)
+    target = target or self.CurrentTarget
     if not target then return nil end
     if typeof(target) == "Instance" then
         if target:IsA("Player") then
@@ -262,22 +156,146 @@ local function GetTargetCharacter(target)
     return nil
 end
 
-local function GetTargetAimPart(target, preferredPart)
-    local char = GetTargetCharacter(target)
+function TargetLock:GetTargetAimPart(target, preferredPart)
+    local char = self:GetTargetCharacter(target)
     if not char then return nil end
-    preferredPart = preferredPart or "HumanoidRootPart"
+    preferredPart = preferredPart or self.TargetPart or "HumanoidRootPart"
 
-    return char:FindFirstChild(preferredPart) 
-        or char:FindFirstChild("HumanoidRootPart") 
-        or char:FindFirstChild("Head") 
-        or char:FindFirstChild("Torso") 
+    return char:FindFirstChild(preferredPart)
+        or char:FindFirstChild("HumanoidRootPart")
+        or char:FindFirstChild("Head")
+        or char:FindFirstChild("Torso")
         or char.PrimaryPart
+end
+
+function TargetLock:GetClosestTargetToCenter()
+    local myChar = LocalPlayer.Character
+    local myHRP = myChar and myChar:FindFirstChild("HumanoidRootPart")
+    if not myHRP then return nil end
+
+    local maxDist3D = self.MaxRange or 3500
+    local closestEntity = nil
+    local shortest3DDist = maxDist3D
+
+    local function checkEntity(entity, isPlayer)
+        if not entity or entity == myChar then return end
+        if isPlayer then
+            local p = Services.Players:GetPlayerFromCharacter(entity)
+            if not p or p == LocalPlayer then return end
+            if self:IsPvPDisabled(p) then return end
+            if self:IsInSafeZone(entity) then return end
+        else
+            if self:IsInSafeZone(entity) then return end
+        end
+
+        local hum = entity:FindFirstChildOfClass("Humanoid")
+        if not hum or hum.Health <= 0 then return end
+        local part = entity:FindFirstChild(self.TargetPart) or entity:FindFirstChild("HumanoidRootPart") or entity:FindFirstChild("Head")
+        if not part then return end
+
+        local dist = (part.Position - myHRP.Position).Magnitude
+        if dist <= shortest3DDist then
+            shortest3DDist = dist
+            closestEntity = isPlayer and Services.Players:GetPlayerFromCharacter(entity) or entity
+        end
+    end
+
+    if self.TargetPlayers then
+        for _, p in ipairs(Services.Players:GetPlayers()) do
+            if p ~= LocalPlayer and p.Character then
+                checkEntity(p.Character, true)
+            end
+        end
+    end
+
+    if self.TargetNPCs then
+        local searchFolders = { Services.Workspace }
+        for _, folderName in ipairs({"Enemies", "NPCs", "Mobs", "Live", "Characters"}) do
+            local f = Services.Workspace:FindFirstChild(folderName)
+            if f then table.insert(searchFolders, f) end
+        end
+
+        local checked = {}
+        for _, folder in ipairs(searchFolders) do
+            for _, obj in ipairs(folder:GetChildren()) do
+                if obj:IsA("Model") and obj ~= myChar and not checked[obj] and not Services.Players:GetPlayerFromCharacter(obj) then
+                    checked[obj] = true
+                    checkEntity(obj, false)
+                end
+            end
+        end
+    end
+
+    return closestEntity
+end
+
+function TargetLock:GetNearestTargetByCursor()
+    local camera = Services.Workspace.CurrentCamera
+    if not camera then return nil end
+
+    local mousePos = Vector2.new(Mouse.X, Mouse.Y)
+    local myChar = LocalPlayer.Character
+    local closestEntity = nil
+    local shortestDistance = math.huge
+
+    local function checkEntityCursor(entity, isPlayer)
+        if not entity or entity == myChar then return end
+        if isPlayer then
+            local p = Services.Players:GetPlayerFromCharacter(entity)
+            if not p or p == LocalPlayer then return end
+            if self:IsPvPDisabled(p) then return end
+            if self:IsInSafeZone(entity) then return end
+        else
+            if self:IsInSafeZone(entity) then return end
+        end
+
+        local hum = entity:FindFirstChildOfClass("Humanoid")
+        local root = entity:FindFirstChild("HumanoidRootPart") or entity:FindFirstChild("Head")
+        if not hum or hum.Health <= 0 or not root then return end
+
+        local screenPos, onScreen = camera:WorldToViewportPoint(root.Position)
+        if onScreen then
+            local dist = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
+            if dist < shortestDistance then
+                shortestDistance = dist
+                closestEntity = isPlayer and Services.Players:GetPlayerFromCharacter(entity) or entity
+            end
+        end
+    end
+
+    if self.TargetPlayers then
+        for _, p in ipairs(Services.Players:GetPlayers()) do
+            if p ~= LocalPlayer and p.Character then
+                checkEntityCursor(p.Character, true)
+            end
+        end
+    end
+
+    if self.TargetNPCs then
+        local searchFolders = { Services.Workspace }
+        for _, folderName in ipairs({"Enemies", "NPCs", "Mobs", "Live", "Characters"}) do
+            local f = Services.Workspace:FindFirstChild(folderName)
+            if f then table.insert(searchFolders, f) end
+        end
+
+        local checked = {}
+        for _, folder in ipairs(searchFolders) do
+            for _, obj in ipairs(folder:GetChildren()) do
+                if obj:IsA("Model") and obj ~= myChar and not checked[obj] and not Services.Players:GetPlayerFromCharacter(obj) then
+                    checked[obj] = true
+                    checkEntityCursor(obj, false)
+                end
+            end
+        end
+    end
+
+    return closestEntity
 end
 
 function TargetLock:GetTargetPosition()
     if not self.Enabled or not self.CurrentTarget then return nil end
 
-    local targetPart = GetTargetAimPart(self.CurrentTarget, self.TargetPart)
+    local targetPart = self:GetTargetAimPart(self.CurrentTarget, self.TargetPart)
     if not targetPart then return nil end
 
     local targetPos = targetPart.Position
@@ -300,7 +318,7 @@ function TargetLock:UpdatePlayerHighlight()
         return
     end
 
-    local targetChar = GetTargetCharacter(self.CurrentTarget)
+    local targetChar = self:GetTargetCharacter(self.CurrentTarget)
     if not targetChar then
         if self.HighlightInstance then
             pcall(function() self.HighlightInstance:Destroy() end)
@@ -311,7 +329,7 @@ function TargetLock:UpdatePlayerHighlight()
 
     if not self.HighlightInstance or self.HighlightInstance.Parent ~= targetChar then
         if self.HighlightInstance then pcall(function() self.HighlightInstance:Destroy() end) end
-        
+
         local hl = Instance.new("Highlight")
         hl.Name = "VortexPlayerHighlight"
         hl.Adornee = targetChar
@@ -326,15 +344,16 @@ function TargetLock:UpdatePlayerHighlight()
 end
 
 --------------------------------------------------------------------------------
--- 4. BUCLES DE ACTUALIZACIÓN Y HOOKS METATABLARES SEGUROS
+-- 4. BUCLES DE ACTUALIZACIÓN & METAMETHOD HOOKS DE SACRED AHK
 --------------------------------------------------------------------------------
 
+-- Actualización periódica atenuada de objetivo
 task.spawn(function()
     while task.wait(0.15) do
         if TargetLock.Enabled then
             pcall(function()
                 if TargetLock.TargetMode == "NearestDistance" then
-                    TargetLock.CurrentTarget = TargetLock:GetNearestTargetByDistance()
+                    TargetLock.CurrentTarget = TargetLock:GetClosestTargetToCenter()
                 elseif TargetLock.TargetMode == "NearestCursor" then
                     TargetLock.CurrentTarget = TargetLock:GetNearestTargetByCursor()
                 end
@@ -349,7 +368,7 @@ task.spawn(function()
     end
 end)
 
--- Orientación horizontal del personaje para dirigir ataques Melee, Espadas y Frutas
+-- Orientación horizontal del personaje
 Services.RunService.RenderStepped:Connect(function()
     if TargetLock.Enabled and TargetLock.CurrentTarget then
         local targetPos = TargetLock:GetTargetPosition()
@@ -367,7 +386,7 @@ function TargetLock:HookAll()
     if self.Hooked then return end
     self.Hooked = true
 
-    -- 1. Hook del Módulo ReplicatedStorage.Mouse
+    -- 1. Hook de ReplicatedStorage.Mouse (Sacred AHK Pattern)
     pcall(function()
         local MouseModuleInstance = Services.ReplicatedStorage:FindFirstChild("Mouse")
         if MouseModuleInstance then
@@ -377,7 +396,7 @@ function TargetLock:HookAll()
                 local mmt = getrawmetatable(MouseModule)
                 if mmt then setreadonly(mmt, false) else mmt = {}; setmetatable(MouseModule, mmt) end
                 rawset(MouseModule, "Hit", nil); rawset(MouseModule, "Target", nil)
-                
+
                 mmt.__index = function(selfTable, key)
                     if key == "Hit" then
                         if TargetLock.Enabled and TargetLock.CurrentTarget then
@@ -387,7 +406,7 @@ function TargetLock:HookAll()
                         return realStore.Hit
                     elseif key == "Target" then
                         if TargetLock.Enabled and TargetLock.CurrentTarget then
-                            local tPart = GetTargetAimPart(TargetLock.CurrentTarget, TargetLock.TargetPart)
+                            local tPart = TargetLock:GetTargetAimPart()
                             if tPart then return tPart end
                         end
                         return realStore.Target
@@ -401,23 +420,70 @@ function TargetLock:HookAll()
         end
     end)
 
-    -- 2. Hook global seguro de Mouse.__index con checkcaller()
+    -- 2. Hook de Metamétodos Globales (__index y __namecall con checkcaller)
     pcall(function()
         if hookmetamethod then
             local oldIndex = nil
+            local oldNamecall = nil
+
             oldIndex = hookmetamethod(game, "__index", newcclosure(function(selfInstance, key)
                 if not checkcaller() and selfInstance == Mouse and (key == "Hit" or key == "hit" or key == "Target" or key == "target") then
                     if TargetLock.Enabled and TargetLock.CurrentTarget then
-                        if key == "Hit" or key == "hit" then
-                            local targetPos = TargetLock:GetTargetPosition()
-                            if targetPos then return CFrame.new(targetPos) end
-                        elseif key == "Target" or key == "target" then
-                            local targetPart = GetTargetAimPart(TargetLock.CurrentTarget, TargetLock.TargetPart)
-                            if targetPart then return targetPart end
+                        local tPos = TargetLock:GetTargetPosition()
+                        if tPos then
+                            if key == "Hit" or key == "hit" then return CFrame.new(tPos) end
+                            if key == "Target" or key == "target" then return TargetLock:GetTargetAimPart() end
                         end
                     end
                 end
                 return oldIndex(selfInstance, key)
+            end))
+
+            oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(selfInstance, ...)
+                local args = {...}
+                local ncm = getnamecallmethod and getnamecallmethod()
+                local method = ncm and tostring(ncm):lower() or ""
+
+                if not checkcaller() and TargetLock.Enabled and TargetLock.CurrentTarget then
+                    local activePos = TargetLock:GetTargetPosition()
+                    local targetChar = TargetLock:GetTargetCharacter()
+                    local targetPart = TargetLock:GetTargetAimPart()
+
+                    if activePos and targetPart then
+                        if (method == "fireserver" or method == "invokeserver") then
+                            if selfInstance.Name == "RE/RegisterHit" or selfInstance.Name == "RegisterHit" or tostring(selfInstance.Name):find("RegisterHit") then
+                                local targetHead = targetChar and (targetChar:FindFirstChild("Head") or targetChar:FindFirstChild("HumanoidRootPart")) or targetPart
+                                if targetHead and targetChar then
+                                    args[1] = targetHead
+                                    args[2] = { { targetChar, targetHead } }
+                                    return oldNamecall(selfInstance, unpack(args))
+                                end
+                            end
+
+                            if selfInstance.Name == "RE/ShootGunEvent" or selfInstance.Name == "ShootGunEvent" or tostring(selfInstance.Name):find("ShootGunEvent") then
+                                args[1] = activePos
+                                if targetChar then
+                                    args[2] = { targetChar }
+                                end
+                                return oldNamecall(selfInstance, unpack(args))
+                            end
+                        elseif (method == "raycast" or method == "findpartonray" or method == "findpartonraywithignorelist" or method == "findpartonraywithwhitelist") then
+                            if method == "raycast" then
+                                return {
+                                    Instance = targetPart,
+                                    Position = activePos,
+                                    Hit = activePos,
+                                    Normal = Vector3.new(0, 1, 0),
+                                    Material = Enum.Material.SmoothPlastic
+                                }
+                            else
+                                return targetPart, activePos, Vector3.new(0, 1, 0), Enum.Material.SmoothPlastic
+                            end
+                        end
+                    end
+                end
+
+                return oldNamecall(selfInstance, ...)
             end))
         else
             local gmt = getrawmetatable(game)
@@ -427,12 +493,10 @@ function TargetLock:HookAll()
             gmt.__index = newcclosure(function(selfInstance, key)
                 if not checkcaller() and selfInstance == Mouse and (key == "Hit" or key == "hit" or key == "Target" or key == "target") then
                     if TargetLock.Enabled and TargetLock.CurrentTarget then
-                        if key == "Hit" or key == "hit" then
-                            local targetPos = TargetLock:GetTargetPosition()
-                            if targetPos then return CFrame.new(targetPos) end
-                        elseif key == "Target" or key == "target" then
-                            local targetPart = GetTargetAimPart(TargetLock.CurrentTarget, TargetLock.TargetPart)
-                            if targetPart then return targetPart end
+                        local tPos = TargetLock:GetTargetPosition()
+                        if tPos then
+                            if key == "Hit" or key == "hit" then return CFrame.new(tPos) end
+                            if key == "Target" or key == "target" then return TargetLock:GetTargetAimPart() end
                         end
                     end
                 end

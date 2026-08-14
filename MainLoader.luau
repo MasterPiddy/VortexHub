@@ -1,10 +1,10 @@
 --[[
-    VortexHub MainLoader.luau - Motor Estable de Auto-Aim con Workaround Administrativo
-    - Multi-Tier PlayerGui Inspector: Consulta PlayerGui, Overheads y Atributos sin crasheos.
-    - SafeZoneCheck y PvPDisabledCheck automáticos, seguros y libres de errores.
-    - PlayerHighlight: Resaltado Rojo Puro.
-    - Metamethods seguros con checkcaller() y compatibilidad con hookmetamethod.
-    - ReplicatedStorage.Mouse hook y orientación de personaje para impacto 100%.
+    VortexHub MainLoader.luau - Motor Universal de Auto-Aim / Silent Aim (Basado en Sacred AHK)
+    - Validaciones Hardcoded: SafeZone Check & PvP Disabled Check automáticas.
+    - PlayerHighlight: Resaltador en Rojo Puro (Pure Red).
+    - Metamethods de Sacred AHK: __index, __namecall (Raycast, RegisterHit, ShootGunEvent) con protección checkcaller().
+    - Hook de ReplicatedStorage.Mouse para soporte total de frutas y habilidades.
+    - Soporte completo para Jugadores & NPCs/Mobs.
     
     Ejecutable mediante:
     loadstring(game:HttpGet("https://raw.githubusercontent.com/MasterPiddy/VortexHub/main/MainLoader.luau"))()
@@ -57,13 +57,14 @@ local VortexHub = {
     Version = "1.0.0",
     Config = {},
     
-    -- Target Lock & Auto-Aim State
+    -- Target Lock & Auto-Aim State (Sacred AHK)
     TargetLockEnabled = false,
     TargetPlayers = true,
     TargetNPCs = true,
     TargetMode = "NearestDistance", -- "NearestDistance", "NearestCursor", "Manual"
     TargetPart = "HumanoidRootPart", -- "HumanoidRootPart", "Head"
     PlayerHighlightEnabled = false,
+    MaxRange = 3500,
     
     ActiveTarget = nil,
     PredictMovement = true,
@@ -95,33 +96,61 @@ local VortexHub = {
 }
 
 --------------------------------------------------------------------------------
--- 1. WORKAROUND ADMINISTRATIVO DE ACCESO A PLAYERGUI & DATOS DE JUGADORES
+-- 1. VALIDACIONES HARDCODED (SAFEZONE & PVP DISABLED CHECK)
 --------------------------------------------------------------------------------
 
-function VortexHub:GetPlayerGui(targetPlayer)
-    if not targetPlayer or not targetPlayer:IsA("Player") then return nil end
-    if targetPlayer == LocalPlayer then
-        return LocalPlayer:FindFirstChild("PlayerGui")
-    end
+local function IsInSafeZone(targetChar)
+    if not targetChar then return false end
+    local hrp = targetChar:FindFirstChild("HumanoidRootPart") or targetChar:FindFirstChild("Head")
+    if not hrp then return false end
 
-    local pgui = nil
-    pcall(function()
-        pgui = targetPlayer:FindFirstChild("PlayerGui")
+    local ok, inZone = pcall(function()
+        local wo = Services.Workspace:FindFirstChild("_WorldOrigin")
+        if not wo then return false end
+
+        -- SafeZones
+        local safeZones = wo:FindFirstChild("SafeZones")
+        if safeZones then
+            for _, zone in pairs(safeZones:GetChildren()) do
+                local mesh = zone:FindFirstChild("Mesh") or zone:FindFirstChildOfClass("SpecialMesh")
+                if mesh then
+                    local realDiameter = zone.Size.X * (mesh.Scale and mesh.Scale.X or 1)
+                    local radius = realDiameter / 2
+                    if radius and radius > 0 then
+                        local dist = (zone.Position - hrp.Position).Magnitude
+                        if dist <= radius then return true end
+                    end
+                end
+            end
+        end
+
+        -- Player Spawns
+        local spawns = wo:FindFirstChild("PlayerSpawns")
+        if spawns then
+            for _, folder in pairs(spawns:GetChildren()) do
+                for _, sp in pairs(folder:GetChildren()) do
+                    local part = sp:FindFirstChild("Part") or sp
+                    if part:IsA("BasePart") and (hrp.Position - part.Position).Magnitude <= 300 then
+                        return true
+                    end
+                end
+            end
+        end
+        return false
     end)
-    return pgui
+    return ok and inZone == true
 end
 
--- Determina el estado PvP mediante inspección segura en 3 capas
 local function IsPvPDisabled(targetPlayer)
     if not targetPlayer or not targetPlayer:IsA("Player") then return false end
-    
-    -- Tier 1: Atributos de Red Replicados
+
+    -- 1. Atributos de Red
     local okAttr, attrDisabled = pcall(function()
         return targetPlayer:GetAttribute("PvpDisabled") == true
     end)
     if okAttr and attrDisabled then return true end
 
-    -- Tier 2: Acceso Directo a PlayerGui (Admin Workaround)
+    -- 2. Acceso Seguro a PlayerGui (Admin Workaround)
     local okGui, guiDisabled = pcall(function()
         local pgui = targetPlayer:FindFirstChild("PlayerGui")
         if pgui then
@@ -129,7 +158,7 @@ local function IsPvPDisabled(targetPlayer)
             if main then
                 local dis = main:FindFirstChild("PvpDisabled")
                 if dis and dis.Visible then return true end
-                
+
                 local pvp = main:FindFirstChild("Pvp")
                 if pvp then
                     local frame = pvp:FindFirstChild("Frame")
@@ -146,7 +175,7 @@ local function IsPvPDisabled(targetPlayer)
     end)
     if okGui and guiDisabled then return true end
 
-    -- Tier 3: Overheads / Billboards en la Cabeza del Personaje
+    -- 3. Overheads en Head
     local okHead, headDisabled = pcall(function()
         local char = targetPlayer.Character
         local head = char and char:FindFirstChild("Head")
@@ -171,145 +200,12 @@ local function IsPvPDisabled(targetPlayer)
     return false
 end
 
-local function IsInSafeZone(targetChar)
-    if not targetChar then return false end
-    local hrp = targetChar:FindFirstChild("HumanoidRootPart") or targetChar:FindFirstChild("Head")
-    if not hrp then return false end
-
-    local ok, inZone = pcall(function()
-        local wo = Services.Workspace:FindFirstChild("_WorldOrigin")
-        if not wo then return false end
-
-        -- SafeZones
-        local safeZones = wo:FindFirstChild("SafeZones")
-        if safeZones then
-            for _, zone in ipairs(safeZones:GetChildren()) do
-                local mesh = zone:FindFirstChildOfClass("SpecialMesh")
-                local diameter = zone.Size.X * (mesh and mesh.Scale.X or 1)
-                local radius = diameter / 2
-                if radius > 0 and (zone.Position - hrp.Position).Magnitude <= radius then
-                    return true
-                end
-            end
-        end
-
-        -- Player Spawns
-        local spawns = wo:FindFirstChild("PlayerSpawns")
-        if spawns then
-            for _, folder in ipairs(spawns:GetChildren()) do
-                for _, sp in ipairs(folder:GetChildren()) do
-                    if sp:IsA("BasePart") and (hrp.Position - sp.Position).Magnitude <= 300 then
-                        return true
-                    end
-                end
-            end
-        end
-        return false
-    end)
-
-    return ok and inZone == true
-end
-
-local function IsValidNPC(model)
-    if not model or not model:IsA("Model") then return false end
-    if Services.Players:GetPlayerFromCharacter(model) then return false end
-    local hum = model:FindFirstChildOfClass("Humanoid")
-    local root = model:FindFirstChild("HumanoidRootPart") or model:FindFirstChild("Torso") or model.PrimaryPart
-    return (hum and root and hum.Health > 0)
-end
-
 --------------------------------------------------------------------------------
--- 2. BÚSQUEDA Y SELECCIÓN DE OBJETIVOS
+-- 2. SELECCIÓN DE OBJETIVOS (SACRED AHK ENGINE)
 --------------------------------------------------------------------------------
-
-local function GetValidTargets()
-    local targets = {}
-    local myChar = LocalPlayer.Character
-
-    -- 1. Jugadores (Con filtros automáticos de SafeZone & PvP)
-    if VortexHub.TargetPlayers then
-        for _, player in ipairs(Services.Players:GetPlayers()) do
-            if player ~= LocalPlayer and player.Character then
-                if not IsPvPDisabled(player) and not IsInSafeZone(player.Character) then
-                    local root = player.Character:FindFirstChild("HumanoidRootPart")
-                    local hum = player.Character:FindFirstChildOfClass("Humanoid")
-                    if root and hum and hum.Health > 0 then
-                        table.insert(targets, { Instance = player, Character = player.Character, Root = root, IsPlayer = true })
-                    end
-                end
-            end
-        end
-    end
-
-    -- 2. NPCs / Mobs (Búsqueda acotada sin lag)
-    if VortexHub.TargetNPCs then
-        local searchFolders = { Services.Workspace }
-        for _, folderName in ipairs({"Enemies", "NPCs", "Mobs", "Live", "Characters"}) do
-            local f = Services.Workspace:FindFirstChild(folderName)
-            if f then table.insert(searchFolders, f) end
-        end
-
-        local checked = {}
-        for _, folder in ipairs(searchFolders) do
-            for _, obj in ipairs(folder:GetChildren()) do
-                if obj:IsA("Model") and obj ~= myChar and not checked[obj] then
-                    checked[obj] = true
-                    if IsValidNPC(obj) and not IsInSafeZone(obj) then
-                        local root = obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChild("Torso") or obj.PrimaryPart
-                        table.insert(targets, { Instance = obj, Character = obj, Root = root, IsPlayer = false })
-                    end
-                end
-            end
-        end
-    end
-
-    return targets
-end
-
-local function GetNearestTargetByDistance()
-    local myChar = LocalPlayer.Character
-    local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
-    if not myRoot then return nil end
-
-    local targets = GetValidTargets()
-    local closest = nil
-    local shortestDistance = math.huge
-
-    for _, t in ipairs(targets) do
-        local dist = (t.Root.Position - myRoot.Position).Magnitude
-        if dist < shortestDistance then
-            shortestDistance = dist
-            closest = t.Instance
-        end
-    end
-
-    return closest
-end
-
-local function GetNearestTargetByCursor()
-    local camera = Services.Workspace.CurrentCamera
-    if not camera then return nil end
-
-    local mousePos = Vector2.new(Mouse.X, Mouse.Y)
-    local targets = GetValidTargets()
-    local closest = nil
-    local shortestDistance = math.huge
-
-    for _, t in ipairs(targets) do
-        local screenPos, onScreen = camera:WorldToViewportPoint(t.Root.Position)
-        if onScreen then
-            local dist = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
-            if dist < shortestDistance then
-                shortestDistance = dist
-                closest = t.Instance
-            end
-        end
-    end
-
-    return closest
-end
 
 local function GetTargetCharacter(target)
+    target = target or VortexHub.ActiveTarget
     if not target then return nil end
     if typeof(target) == "Instance" then
         if target:IsA("Player") then
@@ -326,11 +222,135 @@ local function GetTargetAimPart(target, preferredPart)
     if not char then return nil end
     preferredPart = preferredPart or VortexHub.TargetPart or "HumanoidRootPart"
 
-    return char:FindFirstChild(preferredPart) 
-        or char:FindFirstChild("HumanoidRootPart") 
-        or char:FindFirstChild("Head") 
-        or char:FindFirstChild("Torso") 
+    return char:FindFirstChild(preferredPart)
+        or char:FindFirstChild("HumanoidRootPart")
+        or char:FindFirstChild("Head")
+        or char:FindFirstChild("Torso")
         or char.PrimaryPart
+end
+
+local function GetClosestTargetToCenter()
+    local myChar = LocalPlayer.Character
+    local myHRP = myChar and myChar:FindFirstChild("HumanoidRootPart")
+    if not myHRP then return nil end
+
+    local maxDist3D = VortexHub.MaxRange or 3500
+    local closestEntity = nil
+    local shortest3DDist = maxDist3D
+
+    local function checkEntity(entity, isPlayer)
+        if not entity or entity == myChar then return end
+        if isPlayer then
+            local p = Services.Players:GetPlayerFromCharacter(entity)
+            if not p or p == LocalPlayer then return end
+            if IsPvPDisabled(p) then return end
+            if IsInSafeZone(entity) then return end
+        else
+            if IsInSafeZone(entity) then return end
+        end
+
+        local hum = entity:FindFirstChildOfClass("Humanoid")
+        if not hum or hum.Health <= 0 then return end
+        local part = entity:FindFirstChild(VortexHub.TargetPart) or entity:FindFirstChild("HumanoidRootPart") or entity:FindFirstChild("Head")
+        if not part then return end
+
+        local dist = (part.Position - myHRP.Position).Magnitude
+        if dist <= shortest3DDist then
+            shortest3DDist = dist
+            closestEntity = isPlayer and Services.Players:GetPlayerFromCharacter(entity) or entity
+        end
+    end
+
+    if VortexHub.TargetPlayers then
+        for _, p in ipairs(Services.Players:GetPlayers()) do
+            if p ~= LocalPlayer and p.Character then
+                checkEntity(p.Character, true)
+            end
+        end
+    end
+
+    if VortexHub.TargetNPCs then
+        local searchFolders = { Services.Workspace }
+        for _, folderName in ipairs({"Enemies", "NPCs", "Mobs", "Live", "Characters"}) do
+            local f = Services.Workspace:FindFirstChild(folderName)
+            if f then table.insert(searchFolders, f) end
+        end
+
+        local checked = {}
+        for _, folder in ipairs(searchFolders) do
+            for _, obj in ipairs(folder:GetChildren()) do
+                if obj:IsA("Model") and obj ~= myChar and not checked[obj] and not Services.Players:GetPlayerFromCharacter(obj) then
+                    checked[obj] = true
+                    checkEntity(obj, false)
+                end
+            end
+        end
+    end
+
+    return closestEntity
+end
+
+local function GetNearestTargetByCursor()
+    local camera = Services.Workspace.CurrentCamera
+    if not camera then return nil end
+
+    local mousePos = Vector2.new(Mouse.X, Mouse.Y)
+    local myChar = LocalPlayer.Character
+    local closestEntity = nil
+    local shortestDistance = math.huge
+
+    local function checkEntityCursor(entity, isPlayer)
+        if not entity or entity == myChar then return end
+        if isPlayer then
+            local p = Services.Players:GetPlayerFromCharacter(entity)
+            if not p or p == LocalPlayer then return end
+            if IsPvPDisabled(p) then return end
+            if IsInSafeZone(entity) then return end
+        else
+            if IsInSafeZone(entity) then return end
+        end
+
+        local hum = entity:FindFirstChildOfClass("Humanoid")
+        local root = entity:FindFirstChild("HumanoidRootPart") or entity:FindFirstChild("Head")
+        if not hum or hum.Health <= 0 or not root then return end
+
+        local screenPos, onScreen = camera:WorldToViewportPoint(root.Position)
+        if onScreen then
+            local dist = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
+            if dist < shortestDistance then
+                shortestDistance = dist
+                closestEntity = isPlayer and Services.Players:GetPlayerFromCharacter(entity) or entity
+            end
+        end
+    end
+
+    if VortexHub.TargetPlayers then
+        for _, p in ipairs(Services.Players:GetPlayers()) do
+            if p ~= LocalPlayer and p.Character then
+                checkEntityCursor(p.Character, true)
+            end
+        end
+    end
+
+    if VortexHub.TargetNPCs then
+        local searchFolders = { Services.Workspace }
+        for _, folderName in ipairs({"Enemies", "NPCs", "Mobs", "Live", "Characters"}) do
+            local f = Services.Workspace:FindFirstChild(folderName)
+            if f then table.insert(searchFolders, f) end
+        end
+
+        local checked = {}
+        for _, folder in ipairs(searchFolders) do
+            for _, obj in ipairs(folder:GetChildren()) do
+                if obj:IsA("Model") and obj ~= myChar and not checked[obj] and not Services.Players:GetPlayerFromCharacter(obj) then
+                    checked[obj] = true
+                    checkEntityCursor(obj, false)
+                end
+            end
+        end
+    end
+
+    return closestEntity
 end
 
 local function GetTargetPosition()
@@ -370,7 +390,7 @@ local function UpdatePlayerHighlight()
 
     if not VortexHub.HighlightInstance or VortexHub.HighlightInstance.Parent ~= targetChar then
         if VortexHub.HighlightInstance then pcall(function() VortexHub.HighlightInstance:Destroy() end) end
-        
+
         local hl = Instance.new("Highlight")
         hl.Name = "VortexPlayerHighlight"
         hl.Adornee = targetChar
@@ -385,7 +405,7 @@ local function UpdatePlayerHighlight()
 end
 
 --------------------------------------------------------------------------------
--- 4. BUCLES DE ACTUALIZACIÓN Y HOOKS METATABLARES SEGUROS
+-- 4. BUCLES DE ACTUALIZACIÓN & METAMETHOD HOOKS DE SACRED AHK
 --------------------------------------------------------------------------------
 
 task.spawn(function()
@@ -393,7 +413,7 @@ task.spawn(function()
         if VortexHub.TargetLockEnabled then
             pcall(function()
                 if VortexHub.TargetMode == "NearestDistance" then
-                    VortexHub.ActiveTarget = GetNearestTargetByDistance()
+                    VortexHub.ActiveTarget = GetClosestTargetToCenter()
                 elseif VortexHub.TargetMode == "NearestCursor" then
                     VortexHub.ActiveTarget = GetNearestTargetByCursor()
                 end
@@ -408,7 +428,7 @@ task.spawn(function()
     end
 end)
 
--- Orientación horizontal ligera del personaje (Asegura impacto de Melee, Espadas y Frutas)
+-- Orientación horizontal del personaje
 Services.RunService.RenderStepped:Connect(function()
     if VortexHub.TargetLockEnabled and VortexHub.ActiveTarget then
         local targetPos = GetTargetPosition()
@@ -426,7 +446,7 @@ local function HookCombatRedirection()
     if VortexHub.Hooked then return end
     VortexHub.Hooked = true
 
-    -- 1. Hook del Módulo ReplicatedStorage.Mouse
+    -- 1. Hook de ReplicatedStorage.Mouse (Sacred AHK Pattern)
     pcall(function()
         local MouseModuleInstance = Services.ReplicatedStorage:FindFirstChild("Mouse")
         if MouseModuleInstance then
@@ -436,7 +456,7 @@ local function HookCombatRedirection()
                 local mmt = getrawmetatable(MouseModule)
                 if mmt then setreadonly(mmt, false) else mmt = {}; setmetatable(MouseModule, mmt) end
                 rawset(MouseModule, "Hit", nil); rawset(MouseModule, "Target", nil)
-                
+
                 mmt.__index = function(selfTable, key)
                     if key == "Hit" then
                         if VortexHub.TargetLockEnabled and VortexHub.ActiveTarget then
@@ -446,7 +466,7 @@ local function HookCombatRedirection()
                         return realStore.Hit
                     elseif key == "Target" then
                         if VortexHub.TargetLockEnabled and VortexHub.ActiveTarget then
-                            local tPart = GetTargetAimPart(VortexHub.ActiveTarget, VortexHub.TargetPart)
+                            local tPart = GetTargetAimPart()
                             if tPart then return tPart end
                         end
                         return realStore.Target
@@ -460,23 +480,70 @@ local function HookCombatRedirection()
         end
     end)
 
-    -- 2. Hook global seguro de Mouse.__index con checkcaller()
+    -- 2. Hook de Metamétodos Globales (__index y __namecall con checkcaller)
     pcall(function()
         if hookmetamethod then
             local oldIndex = nil
+            local oldNamecall = nil
+
             oldIndex = hookmetamethod(game, "__index", newcclosure(function(selfInstance, key)
                 if not checkcaller() and selfInstance == Mouse and (key == "Hit" or key == "hit" or key == "Target" or key == "target") then
                     if VortexHub.TargetLockEnabled and VortexHub.ActiveTarget then
-                        if key == "Hit" or key == "hit" then
-                            local targetPos = GetTargetPosition()
-                            if targetPos then return CFrame.new(targetPos) end
-                        elseif key == "Target" or key == "target" then
-                            local targetPart = GetTargetAimPart(VortexHub.ActiveTarget, VortexHub.TargetPart)
-                            if targetPart then return targetPart end
+                        local tPos = GetTargetPosition()
+                        if tPos then
+                            if key == "Hit" or key == "hit" then return CFrame.new(tPos) end
+                            if key == "Target" or key == "target" then return GetTargetAimPart() end
                         end
                     end
                 end
                 return oldIndex(selfInstance, key)
+            end))
+
+            oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(selfInstance, ...)
+                local args = {...}
+                local ncm = getnamecallmethod and getnamecallmethod()
+                local method = ncm and tostring(ncm):lower() or ""
+
+                if not checkcaller() and VortexHub.TargetLockEnabled and VortexHub.ActiveTarget then
+                    local activePos = GetTargetPosition()
+                    local targetChar = GetTargetCharacter()
+                    local targetPart = GetTargetAimPart()
+
+                    if activePos and targetPart then
+                        if (method == "fireserver" or method == "invokeserver") then
+                            if selfInstance.Name == "RE/RegisterHit" or selfInstance.Name == "RegisterHit" or tostring(selfInstance.Name):find("RegisterHit") then
+                                local targetHead = targetChar and (targetChar:FindFirstChild("Head") or targetChar:FindFirstChild("HumanoidRootPart")) or targetPart
+                                if targetHead and targetChar then
+                                    args[1] = targetHead
+                                    args[2] = { { targetChar, targetHead } }
+                                    return oldNamecall(selfInstance, unpack(args))
+                                end
+                            end
+
+                            if selfInstance.Name == "RE/ShootGunEvent" or selfInstance.Name == "ShootGunEvent" or tostring(selfInstance.Name):find("ShootGunEvent") then
+                                args[1] = activePos
+                                if targetChar then
+                                    args[2] = { targetChar }
+                                end
+                                return oldNamecall(selfInstance, unpack(args))
+                            end
+                        elseif (method == "raycast" or method == "findpartonray" or method == "findpartonraywithignorelist" or method == "findpartonraywithwhitelist") then
+                            if method == "raycast" then
+                                return {
+                                    Instance = targetPart,
+                                    Position = activePos,
+                                    Hit = activePos,
+                                    Normal = Vector3.new(0, 1, 0),
+                                    Material = Enum.Material.SmoothPlastic
+                                }
+                            else
+                                return targetPart, activePos, Vector3.new(0, 1, 0), Enum.Material.SmoothPlastic
+                            end
+                        end
+                    end
+                end
+
+                return oldNamecall(selfInstance, ...)
             end))
         else
             local gmt = getrawmetatable(game)
@@ -486,12 +553,10 @@ local function HookCombatRedirection()
             gmt.__index = newcclosure(function(selfInstance, key)
                 if not checkcaller() and selfInstance == Mouse and (key == "Hit" or key == "hit" or key == "Target" or key == "target") then
                     if VortexHub.TargetLockEnabled and VortexHub.ActiveTarget then
-                        if key == "Hit" or key == "hit" then
-                            local targetPos = GetTargetPosition()
-                            if targetPos then return CFrame.new(targetPos) end
-                        elseif key == "Target" or key == "target" then
-                            local targetPart = GetTargetAimPart(VortexHub.ActiveTarget, VortexHub.TargetPart)
-                            if targetPart then return targetPart end
+                        local tPos = GetTargetPosition()
+                        if tPos then
+                            if key == "Hit" or key == "hit" then return CFrame.new(tPos) end
+                            if key == "Target" or key == "target" then return GetTargetAimPart() end
                         end
                     end
                 end
@@ -646,7 +711,7 @@ VortexHub.Commands["player_tracker"] = function(args)
             if VortexHub.ActiveTarget and typeof(VortexHub.ActiveTarget) == "Instance" and VortexHub.ActiveTarget:IsA("Player") then
                 found = VortexHub.ActiveTarget
             else
-                local targetInst = GetNearestTargetByDistance()
+                local targetInst = GetClosestTargetToCenter()
                 if targetInst and typeof(targetInst) == "Instance" and targetInst:IsA("Player") then
                     found = targetInst
                 end
@@ -1180,5 +1245,5 @@ if getgenv then
     getgenv().VortexHub = VortexHub
 end
 
-print("[VortexHub] Motor Estable Auto-Aim Activo con Workaround de Acceso.")
+print("[VortexHub] Motor Estable Auto-Aim Activo con Metamethods de Sacred AHK.")
 return VortexHub
