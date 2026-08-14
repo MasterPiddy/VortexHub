@@ -1,5 +1,6 @@
 --[[
-    TargetLock.luau - Motor Estable y Libre de Crashes de Auto-Aim / Silent Aim
+    TargetLock.luau - Motor de Auto-Aim con Workaround Administrativo de Acceso a PlayerGui
+    - Multi-Tier PlayerGui Inspector: Lee de forma segura PlayerGui (si está disponible/admin), Character Overheads y Atributos.
     - SafeZoneCheck y PvPDisabledCheck automáticos, seguros y libres de errores.
     - PlayerHighlight: Resaltado Rojo Puro.
     - Metamethods seguros con checkcaller() y compatibilidad con hookmetamethod.
@@ -33,9 +34,84 @@ local TargetLock = {
 }
 
 --------------------------------------------------------------------------------
--- 1. VALIDACIONES HARDCODED SEGURAS (SAFEZONE & PVP DISABLED CHECK)
+-- 1. WORKAROUND ADMINISTRATIVO DE ACCESO A PLAYERGUI & DATOS DE JUGADORES
 --------------------------------------------------------------------------------
 
+-- Intenta obtener el PlayerGui de cualquier jugador de forma segura y tolerante a fallos
+function TargetLock:GetPlayerGui(targetPlayer)
+    if not targetPlayer or not targetPlayer:IsA("Player") then return nil end
+    if targetPlayer == LocalPlayer then
+        return LocalPlayer:FindFirstChild("PlayerGui")
+    end
+
+    local pgui = nil
+    pcall(function()
+        pgui = targetPlayer:FindFirstChild("PlayerGui")
+    end)
+    return pgui
+end
+
+-- Determina el estado PvP inspeccionando PlayerGui, Overheads y Atributos de red
+local function IsPvPDisabled(targetPlayer)
+    if not targetPlayer or not targetPlayer:IsA("Player") then return false end
+    
+    -- Tier 1: Comprobación de Atributos de Red
+    local okAttr, attrDisabled = pcall(function()
+        return targetPlayer:GetAttribute("PvpDisabled") == true
+    end)
+    if okAttr and attrDisabled then return true end
+
+    -- Tier 2: Acceso Seguro a PlayerGui (Admin Workaround)
+    local okGui, guiDisabled = pcall(function()
+        local pgui = targetPlayer:FindFirstChild("PlayerGui")
+        if pgui then
+            local main = pgui:FindFirstChild("Main")
+            if main then
+                local dis = main:FindFirstChild("PvpDisabled")
+                if dis and dis.Visible then return true end
+                
+                local pvp = main:FindFirstChild("Pvp")
+                if pvp then
+                    local frame = pvp:FindFirstChild("Frame")
+                    local btn = frame and (frame:FindFirstChild("PvpButton") or frame:FindFirstChildOfClass("TextButton"))
+                    if btn and btn:IsA("TextButton") then
+                        local txt = tostring(btn.Text or ""):upper()
+                        if txt:find("OFF") then return true end
+                        if txt:find("ON") then return false end
+                    end
+                end
+            end
+        end
+        return false
+    end)
+    if okGui and guiDisabled then return true end
+
+    -- Tier 3: Comprobación de Overheads / Billboards en el Personaje (Head)
+    local okHead, headDisabled = pcall(function()
+        local char = targetPlayer.Character
+        local head = char and char:FindFirstChild("Head")
+        if head then
+            for _, gui in ipairs(head:GetChildren()) do
+                if gui:IsA("BillboardGui") or gui:IsA("SurfaceGui") then
+                    for _, desc in ipairs(gui:GetDescendants()) do
+                        if desc:IsA("TextLabel") or desc:IsA("TextButton") then
+                            local t = tostring(desc.Text or ""):upper()
+                            if t:find("PVP DISABLED") or t:find("SAFE") or t:find("NON-PVP") then
+                                return true
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        return false
+    end)
+    if okHead and headDisabled then return true end
+
+    return false
+end
+
+-- Verificar si el personaje está dentro de Zona Segura o Spawn
 local function IsInSafeZone(targetChar)
     if not targetChar then return false end
     local hrp = targetChar:FindFirstChild("HumanoidRootPart") or targetChar:FindFirstChild("Head")
@@ -75,14 +151,6 @@ local function IsInSafeZone(targetChar)
     return ok and inZone == true
 end
 
-local function IsPvPDisabled(targetPlayer)
-    if not targetPlayer or not targetPlayer:IsA("Player") then return false end
-    local ok, disabled = pcall(function()
-        return targetPlayer:GetAttribute("PvpDisabled") == true
-    end)
-    return ok and disabled == true
-end
-
 local function IsValidNPC(model)
     if not model or not model:IsA("Model") then return false end
     if Services.Players:GetPlayerFromCharacter(model) then return false end
@@ -99,7 +167,7 @@ function TargetLock:GetValidTargets()
     local targets = {}
     local myChar = LocalPlayer.Character
 
-    -- 1. Jugadores (Con filtro SafeZone & PvP)
+    -- 1. Jugadores (Con filtro SafeZone & PvP Multi-Tier)
     if self.TargetPlayers then
         for _, player in ipairs(Services.Players:GetPlayers()) do
             if player ~= LocalPlayer and player.Character then

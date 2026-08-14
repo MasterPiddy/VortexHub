@@ -1,10 +1,10 @@
 --[[
-    VortexHub MainLoader.luau - Motor Estable y Blindado de Auto-Aim / Silent Aim & UI
+    VortexHub MainLoader.luau - Motor Estable de Auto-Aim con Workaround Administrativo
+    - Multi-Tier PlayerGui Inspector: Consulta PlayerGui, Overheads y Atributos sin crasheos.
     - SafeZoneCheck y PvPDisabledCheck automáticos, seguros y libres de errores.
     - PlayerHighlight: Resaltado Rojo Puro.
     - Metamethods seguros con checkcaller() y compatibilidad con hookmetamethod.
     - ReplicatedStorage.Mouse hook y orientación de personaje para impacto 100%.
-    - Cero crasheos en ejecutores móviles (Delta, Codex, etc.).
     
     Ejecutable mediante:
     loadstring(game:HttpGet("https://raw.githubusercontent.com/MasterPiddy/VortexHub/main/MainLoader.luau"))()
@@ -95,8 +95,81 @@ local VortexHub = {
 }
 
 --------------------------------------------------------------------------------
--- 1. VALIDACIONES HARDCODED SEGURAS (SAFEZONE & PVP DISABLED CHECK)
+-- 1. WORKAROUND ADMINISTRATIVO DE ACCESO A PLAYERGUI & DATOS DE JUGADORES
 --------------------------------------------------------------------------------
+
+function VortexHub:GetPlayerGui(targetPlayer)
+    if not targetPlayer or not targetPlayer:IsA("Player") then return nil end
+    if targetPlayer == LocalPlayer then
+        return LocalPlayer:FindFirstChild("PlayerGui")
+    end
+
+    local pgui = nil
+    pcall(function()
+        pgui = targetPlayer:FindFirstChild("PlayerGui")
+    end)
+    return pgui
+end
+
+-- Determina el estado PvP mediante inspección segura en 3 capas
+local function IsPvPDisabled(targetPlayer)
+    if not targetPlayer or not targetPlayer:IsA("Player") then return false end
+    
+    -- Tier 1: Atributos de Red Replicados
+    local okAttr, attrDisabled = pcall(function()
+        return targetPlayer:GetAttribute("PvpDisabled") == true
+    end)
+    if okAttr and attrDisabled then return true end
+
+    -- Tier 2: Acceso Directo a PlayerGui (Admin Workaround)
+    local okGui, guiDisabled = pcall(function()
+        local pgui = targetPlayer:FindFirstChild("PlayerGui")
+        if pgui then
+            local main = pgui:FindFirstChild("Main")
+            if main then
+                local dis = main:FindFirstChild("PvpDisabled")
+                if dis and dis.Visible then return true end
+                
+                local pvp = main:FindFirstChild("Pvp")
+                if pvp then
+                    local frame = pvp:FindFirstChild("Frame")
+                    local btn = frame and (frame:FindFirstChild("PvpButton") or frame:FindFirstChildOfClass("TextButton"))
+                    if btn and btn:IsA("TextButton") then
+                        local txt = tostring(btn.Text or ""):upper()
+                        if txt:find("OFF") then return true end
+                        if txt:find("ON") then return false end
+                    end
+                end
+            end
+        end
+        return false
+    end)
+    if okGui and guiDisabled then return true end
+
+    -- Tier 3: Overheads / Billboards en la Cabeza del Personaje
+    local okHead, headDisabled = pcall(function()
+        local char = targetPlayer.Character
+        local head = char and char:FindFirstChild("Head")
+        if head then
+            for _, gui in ipairs(head:GetChildren()) do
+                if gui:IsA("BillboardGui") or gui:IsA("SurfaceGui") then
+                    for _, desc in ipairs(gui:GetDescendants()) do
+                        if desc:IsA("TextLabel") or desc:IsA("TextButton") then
+                            local t = tostring(desc.Text or ""):upper()
+                            if t:find("PVP DISABLED") or t:find("SAFE") or t:find("NON-PVP") then
+                                return true
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        return false
+    end)
+    if okHead and headDisabled then return true end
+
+    return false
+end
 
 local function IsInSafeZone(targetChar)
     if not targetChar then return false end
@@ -135,14 +208,6 @@ local function IsInSafeZone(targetChar)
     end)
 
     return ok and inZone == true
-end
-
-local function IsPvPDisabled(targetPlayer)
-    if not targetPlayer or not targetPlayer:IsA("Player") then return false end
-    local ok, disabled = pcall(function()
-        return targetPlayer:GetAttribute("PvpDisabled") == true
-    end)
-    return ok and disabled == true
 end
 
 local function IsValidNPC(model)
@@ -320,10 +385,9 @@ local function UpdatePlayerHighlight()
 end
 
 --------------------------------------------------------------------------------
--- 4. BUCLES DE ACTUALIZACIÓN Y HOOKS METATABLARES SEGUROS (SIN CRASHES)
+-- 4. BUCLES DE ACTUALIZACIÓN Y HOOKS METATABLARES SEGUROS
 --------------------------------------------------------------------------------
 
--- Bucle de actualización atenuado a 0.15s
 task.spawn(function()
     while task.wait(0.15) do
         if VortexHub.TargetLockEnabled then
@@ -1116,5 +1180,5 @@ if getgenv then
     getgenv().VortexHub = VortexHub
 end
 
-print("[VortexHub] Motor Estable Auto-Aim Activo y Seguro.")
+print("[VortexHub] Motor Estable Auto-Aim Activo con Workaround de Acceso.")
 return VortexHub
