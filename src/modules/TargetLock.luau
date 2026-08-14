@@ -1,9 +1,10 @@
 --[[
     VortexHub TargetLock.luau - Motor Universal de Auto-Aim & Silent Aim
-    - Orientación fluida del personaje en RenderStepped para conectar 100% de ataques melee, espadas y habilidades.
-    - Metamethods de Mouse.Hit, ReplicatedStorage.Mouse, Raycasts y RegisterHit.
-    - SafeZone Cache O(1) y PvP Check ultra ligero por atributos sin bloqueos de interfaz.
-    - Transición instantánea y sin congelamientos al alternar filtros de Jugadores y NPCs.
+    - Detección precisa de NPCs/Mobs y Jugadores.
+    - SafeZone y PvP checks aplicados EXCLUSIVAMENTE a Jugadores (evita descartar NPCs).
+    - Metamethod hooks completos (__index, __namecall, Raycast, RegisterHit, ShootGunEvent).
+    - Orientación automática de personaje y redirección de Mouse.Hit en tiempo real.
+    - Cero bloqueos de pantalla.
 --]]
 
 local Players = game:GetService("Players")
@@ -33,7 +34,7 @@ local activeTargetHighlight = nil
 local BlacklistedPlayers = {}
 
 --------------------------------------------------------------------------------
--- 1. CACHEO DE SAFEZONES & COMPROBACIONES DE SEGURIDAD (ALTO RENDIMIENTO)
+-- 1. CACHEO DE SAFEZONES & COMPROBACIONES DE SEGURIDAD (SOLO PARA JUGADORES)
 --------------------------------------------------------------------------------
 
 local SafeZoneCache = { Zones = {}, Spawns = {}, LastUpdate = 0 }
@@ -76,9 +77,9 @@ local function UpdateSafeZoneCache()
     SafeZoneCache.Spawns = spawns
 end
 
-local function AX_InSafeZone(target)
-    if not target then return false end
-    local char = target.Character or target
+local function AX_InSafeZone(targetPlayer)
+    if not targetPlayer then return false end
+    local char = targetPlayer.Character or targetPlayer
     local hrp = char and (char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Head"))
     if not hrp then return false end
 
@@ -98,11 +99,11 @@ local function AX_InSafeZone(target)
     return false
 end
 
--- PvP Check Ultrarrápido y Libre de Bloqueos
-local function AX_ReadPvPState(target)
-    if not target or not target:IsA("Player") then return true end
+-- PvP Check para Jugadores
+local function AX_ReadPvPState(targetPlayer)
+    if not targetPlayer or not targetPlayer:IsA("Player") then return true end
     local ok, disabled = pcall(function()
-        return target:GetAttribute("PvpDisabled") == true
+        return targetPlayer:GetAttribute("PvpDisabled") == true
     end)
     if ok and disabled then return false end
     return true
@@ -130,7 +131,7 @@ local function IsSilentAimEnemy(p)
 end
 
 --------------------------------------------------------------------------------
--- 2. SELECCIÓN DE OBJETIVOS OPTIMIZADA
+-- 2. SELECCIÓN DE OBJETIVOS (JUGADORES & NPCS/MOBS)
 --------------------------------------------------------------------------------
 
 local function GetClosestTargetToCenter()
@@ -140,7 +141,7 @@ local function GetClosestTargetToCenter()
 
     local maxDist3D = maxRange or 3500
 
-    -- 1. Objetivo Específico Seleccionado
+    -- 1. Objetivo Específico Seleccionado (Jugador)
     if _G.G_SilentAimSelectedPlayer and _G.G_SilentAimSelectedPlayer ~= "" and _G.G_SilentAimSelectedPlayer ~= "Nearest" and _G.G_SilentAimSelectedPlayer ~= "Más Cercano" then
         local targetP = Players:FindFirstChild(_G.G_SilentAimSelectedPlayer)
         if targetP and targetP ~= player and targetP.Character and not BlacklistedPlayers[targetP.Name] then
@@ -163,14 +164,13 @@ local function GetClosestTargetToCenter()
     local function checkTargetPart(character, isPlayer)
         if not character or character == myChar then return end
 
+        -- SafeZone y PvP checks se aplican ÚNICAMENTE a Jugadores reales
         if isPlayer then
             local p = Players:GetPlayerFromCharacter(character)
             if not p or p == player or BlacklistedPlayers[p.Name] then return end
             if _G.G_AimbotPvPCheck and not AX_ReadPvPState(p) then return end
             if _G.G_AimbotSafeZoneCheck and AX_InSafeZone(p) then return end
             if _G.G_SilentAimTeamCheck and not IsSilentAimEnemy(p) then return end
-        else
-            if _G.G_AimbotSafeZoneCheck and AX_InSafeZone(character) then return end
         end
 
         local hum = character:FindFirstChildOfClass("Humanoid")
@@ -194,21 +194,17 @@ local function GetClosestTargetToCenter()
         end
     end
 
-    -- 3. Escaneo Focalizado de NPCs/Mobs
+    -- 3. Escaneo Completo de NPCs/Mobs
     if _G.G_SilentAimTargetMobs then
         local enemies = Workspace:FindFirstChild("Enemies")
         if enemies then
             for _, enemy in ipairs(enemies:GetChildren()) do
                 checkTargetPart(enemy, false)
             end
-        else
-            for _, folderName in ipairs({"NPCs", "Mobs", "Live", "Characters"}) do
-                local f = Workspace:FindFirstChild(folderName)
-                if f then
-                    for _, enemy in ipairs(f:GetChildren()) do
-                        checkTargetPart(enemy, false)
-                    end
-                end
+        end
+        for _, obj in ipairs(Workspace:GetChildren()) do
+            if obj:IsA("Model") and obj ~= myChar and obj:FindFirstChildOfClass("Humanoid") and not Players:GetPlayerFromCharacter(obj) then
+                checkTargetPart(obj, false)
             end
         end
     end
@@ -252,17 +248,25 @@ local function updateTargetHighlight(targetChar)
 end
 
 --------------------------------------------------------------------------------
--- 4. BUCLE ASÍNCRONO DE BÚSQUEDA Y ORIENTACIÓN DE PERSONAJE
+-- 4. ACTUALIZACIÓN EN TIEMPO REAL & ORIENTACIÓN
 --------------------------------------------------------------------------------
 
-task.spawn(function()
-    while true do
-        task.wait(0.10)
+RunService.RenderStepped:Connect(function()
+    pcall(function()
         if _G.G_SilentAimSkill then
-            pcall(function()
-                currentSilentAimTarget = GetClosestTargetToCenter()
+            currentSilentAimTarget = GetClosestTargetToCenter()
 
-                if _G.G_PlayerHighlight and currentSilentAimTarget then
+            -- Orientación horizontal suave hacia el objetivo fijado (M1, Espadas, Pistolas, Frutas)
+            if currentSilentAimTarget and currentSilentAimTarget.Parent then
+                local myChar = player and player.Character
+                local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                if myRoot then
+                    local targetPos = currentSilentAimTarget.Position
+                    local lookAt = Vector3.new(targetPos.X, myRoot.Position.Y, targetPos.Z)
+                    myRoot.CFrame = CFrame.new(myRoot.Position, lookAt)
+                end
+
+                if _G.G_PlayerHighlight then
                     local targetChar = currentSilentAimTarget.Parent
                     if targetChar and targetChar:FindFirstChildOfClass("Humanoid") and targetChar.Humanoid.Health > 0 then
                         updateTargetHighlight(targetChar)
@@ -272,29 +276,18 @@ task.spawn(function()
                 else
                     updateTargetHighlight(nil)
                 end
-            end)
+            else
+                updateTargetHighlight(nil)
+            end
         else
             currentSilentAimTarget = nil
             updateTargetHighlight(nil)
         end
-    end
-end)
-
--- Orientación horizontal automática del personaje (Garantiza impacto de Melee, Espadas y Frutas)
-RunService.RenderStepped:Connect(function()
-    if _G.G_SilentAimSkill and currentSilentAimTarget then
-        local myChar = player and player.Character
-        local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
-        if myRoot and currentSilentAimTarget and currentSilentAimTarget.Parent then
-            local targetPos = currentSilentAimTarget.Position
-            local lookAt = Vector3.new(targetPos.X, myRoot.Position.Y, targetPos.Z)
-            myRoot.CFrame = CFrame.new(myRoot.Position, lookAt)
-        end
-    end
+    end)
 end)
 
 --------------------------------------------------------------------------------
--- 5. METAMETHODS Y REPLICATEDSTORAGE.MOUSE (SILENT AIM SEGURO)
+-- 5. METAMETHODS & REPLICATEDSTORAGE.MOUSE (SILENT AIM SEGURO)
 --------------------------------------------------------------------------------
 
 -- ReplicatedStorage.Mouse Metatable Hook
@@ -341,7 +334,7 @@ if hookmetamethod then
     pcall(function()
         oldIndex = hookmetamethod(game, "__index", newcclosure(function(self, key)
             if not checkcaller() then
-                if self == mouse and (key == "Hit" or key == "hit" or key == "Target" or key == "target") then
+                if (self == mouse or (typeof(self) == "Instance" and self.ClassName == "Mouse")) and (key == "Hit" or key == "hit" or key == "Target" or key == "target") then
                     if _G.G_SilentAimSkill and currentSilentAimTarget and IsCurrentToolAimbotAllowed() and IsCurrentSlotAimbotAllowed() then
                         if key == "Hit" or key == "hit" then return CFrame.new(currentSilentAimTarget.Position) end
                         if key == "Target" or key == "target" then return currentSilentAimTarget end
@@ -384,6 +377,14 @@ if hookmetamethod then
                             end
                         end
 
+                        if self.Name == "RE/ShootGunEvent" or self.Name == "ShootGunEvent" or self.Name:find("ShootGunEvent") then
+                            args[1] = activePos
+                            if currentSilentAimTarget.Parent then
+                                args[2] = { currentSilentAimTarget.Parent }
+                            end
+                            return oldNamecall(self, unpack(args))
+                        end
+
                         for i, arg in ipairs(args) do
                             if typeof(arg) == "Vector3" then 
                                 args[i] = activePos
@@ -422,7 +423,7 @@ else
             if setreadonly then pcall(setreadonly, mt, false) end
 
             mt.__index = newcclosure(function(self, key)
-                if not checkcaller() and self == mouse and (key == "Hit" or key == "hit" or key == "Target" or key == "target") then
+                if not checkcaller() and (self == mouse or (typeof(self) == "Instance" and self.ClassName == "Mouse")) and (key == "Hit" or key == "hit" or key == "Target" or key == "target") then
                     if _G.G_SilentAimSkill and currentSilentAimTarget and IsCurrentToolAimbotAllowed() and IsCurrentSlotAimbotAllowed() then
                         if key == "Hit" or key == "hit" then return CFrame.new(currentSilentAimTarget.Position) end
                         if key == "Target" or key == "target" then return currentSilentAimTarget end
@@ -459,6 +460,14 @@ else
                                 args[2] = { { targetChar, targetHead } }
                                 return oldNamecall(self, unpack(args))
                             end
+                        end
+
+                        if self.Name == "RE/ShootGunEvent" or self.Name == "ShootGunEvent" or self.Name:find("ShootGunEvent") then
+                            args[1] = activePos
+                            if currentSilentAimTarget.Parent then
+                                args[2] = { currentSilentAimTarget.Parent }
+                            end
+                            return oldNamecall(self, unpack(args))
                         end
 
                         for i, arg in ipairs(args) do
