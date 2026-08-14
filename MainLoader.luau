@@ -1,9 +1,9 @@
 --[[
-    VortexHub MainLoader.luau - Monolítico Universal Optimizado (Opción 1: Alto Rendimiento)
-    - SafeZoneCheck & Spawn precalculados en caché estático O(1).
-    - Bucle de búsqueda asíncrono desacoplado a 0.12s (Cero impacto en el renderizado).
-    - PlayerHighlight en Rojo Puro.
-    - Metamethods estables con checkcaller() y ReplicatedStorage.Mouse.
+    VortexHub MainLoader.luau - Monolítico Universal Optimizado
+    - Orientación fluida del personaje en RenderStepped para conectar 100% de ataques melee, espadas y habilidades.
+    - Metamethods de Mouse.Hit, ReplicatedStorage.Mouse, Raycasts y RegisterHit.
+    - SafeZone Cache O(1) y PvP Check ultra ligero por atributos sin bloqueos de interfaz.
+    - Transición instantánea y sin congelamientos al alternar filtros de Jugadores y NPCs.
     
     Ejecutable mediante:
     loadstring(game:HttpGet("https://raw.githubusercontent.com/MasterPiddy/VortexHub/main/MainLoader.luau"))()
@@ -80,7 +80,7 @@ local VortexHub = {
 }
 
 --------------------------------------------------------------------------------
--- 1. MOTOR DE AUTO-AIM (ARQUITECTURA DESACOPLADA Y CACHEADA DE ALTO RENDIMIENTO)
+-- 1. MOTOR DE AUTO-AIM & SILENT AIM
 --------------------------------------------------------------------------------
 
 _G.G_SilentAimSkill = false
@@ -161,30 +161,14 @@ local function AX_InSafeZone(target)
     return false
 end
 
+-- PvP Check Ultrarrápido y Libre de Bloqueos
 local function AX_ReadPvPState(target)
-    local ok, on = pcall(function()
-        local attr = target:GetAttribute("PvpDisabled")
-        if attr ~= nil then return attr ~= true end
-        local main = target.PlayerGui and target.PlayerGui:FindFirstChild("Main")
-        if main then
-            local dis = main:FindFirstChild("PvpDisabled")
-            if dis then return not dis.Visible end
-            local pvp = main:FindFirstChild("Pvp")
-            if pvp then
-                local frame = pvp:FindFirstChild("Frame")
-                if frame then
-                    local btn = frame:FindFirstChild("PvpButton") or frame:FindFirstChildOfClass("TextButton")
-                    if btn and btn:IsA("TextButton") then
-                        local txt = tostring(btn.Text or ""):upper()
-                        if txt:find("OFF") then return false end
-                        if txt:find("ON") then return true end
-                    end
-                end
-            end
-        end
-        return true
+    if not target or not target:IsA("Player") then return true end
+    local ok, disabled = pcall(function()
+        return target:GetAttribute("PvpDisabled") == true
     end)
-    return not ok or on
+    if ok and disabled then return false end
+    return true
 end
 
 local function IsSilentAimAlly(p)
@@ -216,7 +200,7 @@ local function GetClosestTargetToCenter()
     local maxDist3D = maxRange or 3500
 
     -- 1. Objetivo Específico Seleccionado
-    if _G.G_SilentAimSelectedPlayer and _G.G_SilentAimSelectedPlayer ~= "" and _G.G_SilentAimSelectedPlayer ~= "Nearest" then
+    if _G.G_SilentAimSelectedPlayer and _G.G_SilentAimSelectedPlayer ~= "" and _G.G_SilentAimSelectedPlayer ~= "Nearest" and _G.G_SilentAimSelectedPlayer ~= "Más Cercano" then
         local targetP = Services.Players:FindFirstChild(_G.G_SilentAimSelectedPlayer)
         if targetP and targetP ~= LocalPlayer and targetP.Character and not BlacklistedPlayers[targetP.Name] then
             if _G.G_AimbotPvPCheck and not AX_ReadPvPState(targetP) then return nil end
@@ -302,14 +286,14 @@ end
 local function updateTargetHighlight(targetChar)
     if not targetChar or not targetChar:IsA("Model") then
         if activeTargetHighlight then
-            activeTargetHighlight:Destroy()
+            pcall(function() activeTargetHighlight:Destroy() end)
             activeTargetHighlight = nil
         end
         return
     end
 
     if not activeTargetHighlight or activeTargetHighlight.Parent ~= targetChar then
-        if activeTargetHighlight then activeTargetHighlight:Destroy() end
+        if activeTargetHighlight then pcall(function() activeTargetHighlight:Destroy() end) end
         activeTargetHighlight = Instance.new("Highlight")
         activeTargetHighlight.Name = "VortexPlayerHighlight"
         activeTargetHighlight.Adornee = targetChar
@@ -322,10 +306,10 @@ local function updateTargetHighlight(targetChar)
     end
 end
 
--- Bucle Asíncrono Atenuado a 0.12s (Desacoplado de RenderStepped)
+-- Bucle Asíncrono Atenuado a 0.10s (Búsqueda continua y Highlight)
 task.spawn(function()
     while true do
-        task.wait(0.12)
+        task.wait(0.10)
         if _G.G_SilentAimSkill then
             pcall(function()
                 currentSilentAimTarget = GetClosestTargetToCenter()
@@ -348,6 +332,19 @@ task.spawn(function()
     end
 end)
 
+-- Orientación horizontal automática del personaje (Garantiza impacto de Melee, Espadas y Frutas)
+Services.RunService.RenderStepped:Connect(function()
+    if _G.G_SilentAimSkill and currentSilentAimTarget then
+        local myChar = LocalPlayer and LocalPlayer.Character
+        local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+        if myRoot and currentSilentAimTarget and currentSilentAimTarget.Parent then
+            local targetPos = currentSilentAimTarget.Position
+            local lookAt = Vector3.new(targetPos.X, myRoot.Position.Y, targetPos.Z)
+            myRoot.CFrame = CFrame.new(myRoot.Position, lookAt)
+        end
+    end
+end)
+
 -- ReplicatedStorage.Mouse Metatable Hook
 local MouseModuleInstance = Services.ReplicatedStorage:FindFirstChild("Mouse")
 local MouseModule = nil
@@ -361,12 +358,12 @@ if MouseModule and typeof(MouseModule) == "table" then
         if mmt then setreadonly(mmt, false) else mmt = {}; setmetatable(MouseModule, mmt) end
         rawset(MouseModule, "Hit", nil); rawset(MouseModule, "Target", nil)
         mmt.__index = function(self, key)
-            if key == "Hit" then
+            if key == "Hit" or key == "hit" then
                 if _G.G_SilentAimSkill and currentSilentAimTarget and IsCurrentToolAimbotAllowed() and IsCurrentSlotAimbotAllowed() then
                     return CFrame.new(currentSilentAimTarget.Position)
                 end
                 return realStore.Hit
-            elseif key == "Target" then
+            elseif key == "Target" or key == "target" then
                 if _G.G_SilentAimSkill and currentSilentAimTarget and IsCurrentToolAimbotAllowed() and IsCurrentSlotAimbotAllowed() then
                     return currentSilentAimTarget
                 end
@@ -374,7 +371,11 @@ if MouseModule and typeof(MouseModule) == "table" then
             end
         end
         mmt.__newindex = function(self, key, value)
-            if key == "Hit" or key == "Target" then realStore[key] = value else rawset(self, key, value) end
+            if key == "Hit" or key == "Target" or key == "hit" or key == "target" then 
+                realStore[key] = value 
+            else 
+                rawset(self, key, value) 
+            end
         end
         setreadonly(mmt, true)
     end)
@@ -388,10 +389,10 @@ if hookmetamethod then
     pcall(function()
         oldIndex = hookmetamethod(game, "__index", newcclosure(function(self, key)
             if not checkcaller() then
-                if self == Mouse and (key == "Hit" or key == "Target") then
+                if self == Mouse and (key == "Hit" or key == "hit" or key == "Target" or key == "target") then
                     if _G.G_SilentAimSkill and currentSilentAimTarget and IsCurrentToolAimbotAllowed() and IsCurrentSlotAimbotAllowed() then
-                        if key == "Hit"    then return CFrame.new(currentSilentAimTarget.Position) end
-                        if key == "Target" then return currentSilentAimTarget end
+                        if key == "Hit" or key == "hit" then return CFrame.new(currentSilentAimTarget.Position) end
+                        if key == "Target" or key == "target" then return currentSilentAimTarget end
                     end
                 end
             end
@@ -469,10 +470,10 @@ else
             if setreadonly then pcall(setreadonly, mt, false) end
 
             mt.__index = newcclosure(function(self, key)
-                if not checkcaller() and self == Mouse and (key == "Hit" or key == "Target") then
+                if not checkcaller() and self == Mouse and (key == "Hit" or key == "hit" or key == "Target" or key == "target") then
                     if _G.G_SilentAimSkill and currentSilentAimTarget and IsCurrentToolAimbotAllowed() and IsCurrentSlotAimbotAllowed() then
-                        if key == "Hit"    then return CFrame.new(currentSilentAimTarget.Position) end
-                        if key == "Target" then return currentSilentAimTarget end
+                        if key == "Hit" or key == "hit" then return CFrame.new(currentSilentAimTarget.Position) end
+                        if key == "Target" or key == "target" then return currentSilentAimTarget end
                     end
                 end
                 return oldIndex(self, key)
@@ -633,11 +634,28 @@ end)
 
 VortexHub.Commands["target_lock"] = function(args)
     if typeof(args) == "table" then
-        if args.enabled ~= nil then _G.G_SilentAimSkill = args.enabled end
-        if args.targetPlayers ~= nil then _G.G_SilentAimTargetPlayers = args.targetPlayers end
-        if args.targetNPCs ~= nil then _G.G_SilentAimTargetMobs = args.targetNPCs end
+        if args.enabled ~= nil then
+            _G.G_SilentAimSkill = args.enabled
+            if not args.enabled then
+                currentSilentAimTarget = nil
+                updateTargetHighlight(nil)
+            end
+        end
+        if args.targetPlayers ~= nil then
+            _G.G_SilentAimTargetPlayers = args.targetPlayers
+            currentSilentAimTarget = nil
+            updateTargetHighlight(nil)
+        end
+        if args.targetNPCs ~= nil then
+            _G.G_SilentAimTargetMobs = args.targetNPCs
+            currentSilentAimTarget = nil
+            updateTargetHighlight(nil)
+        end
         if args.targetPart then _G.G_SilentAimPart = args.targetPart end
-        if args.playerHighlight ~= nil then _G.G_PlayerHighlight = args.playerHighlight end
+        if args.playerHighlight ~= nil then
+            _G.G_PlayerHighlight = args.playerHighlight
+            if not args.playerHighlight then updateTargetHighlight(nil) end
+        end
     end
 end
 
@@ -800,6 +818,10 @@ function VortexHub:RenderCombatCategory(contentArea)
 
     aimToggle.MouseButton1Click:Connect(function()
         _G.G_SilentAimSkill = not _G.G_SilentAimSkill
+        if not _G.G_SilentAimSkill then
+            currentSilentAimTarget = nil
+            updateTargetHighlight(nil)
+        end
         aimToggle.BackgroundColor3 = _G.G_SilentAimSkill and Color3.fromRGB(0, 255, 102) or Color3.fromRGB(45, 38, 80)
         aimToggle.Text = _G.G_SilentAimSkill and "ON" or "OFF"
         aimToggle.TextColor3 = _G.G_SilentAimSkill and Color3.fromRGB(15, 12, 28) or Color3.fromRGB(200, 200, 200)
@@ -831,6 +853,8 @@ function VortexHub:RenderCombatCategory(contentArea)
 
     playersToggle.MouseButton1Click:Connect(function()
         _G.G_SilentAimTargetPlayers = not _G.G_SilentAimTargetPlayers
+        currentSilentAimTarget = nil
+        updateTargetHighlight(nil)
         playersToggle.BackgroundColor3 = _G.G_SilentAimTargetPlayers and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(30, 24, 56)
         playersToggle.Text = "👥 Jugadores: " .. (_G.G_SilentAimTargetPlayers and "SI" or "NO")
     end)
@@ -849,6 +873,8 @@ function VortexHub:RenderCombatCategory(contentArea)
 
     npcsToggle.MouseButton1Click:Connect(function()
         _G.G_SilentAimTargetMobs = not _G.G_SilentAimTargetMobs
+        currentSilentAimTarget = nil
+        updateTargetHighlight(nil)
         npcsToggle.BackgroundColor3 = _G.G_SilentAimTargetMobs and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(30, 24, 56)
         npcsToggle.Text = "👾 NPCs/Mobs: " .. (_G.G_SilentAimTargetMobs and "SI" or "NO")
     end)
@@ -867,6 +893,7 @@ function VortexHub:RenderCombatCategory(contentArea)
 
     partBtn.MouseButton1Click:Connect(function()
         _G.G_SilentAimPart = (_G.G_SilentAimPart == "HumanoidRootPart") and "Head" or "HumanoidRootPart"
+        currentSilentAimTarget = nil
         partBtn.Text = "🎯 Parte: " .. (_G.G_SilentAimPart == "Head" and "Cabeza" or "Cuerpo")
     end)
 
@@ -884,6 +911,7 @@ function VortexHub:RenderCombatCategory(contentArea)
 
     highlightBtn.MouseButton1Click:Connect(function()
         _G.G_PlayerHighlight = not _G.G_PlayerHighlight
+        if not _G.G_PlayerHighlight then updateTargetHighlight(nil) end
         highlightBtn.BackgroundColor3 = _G.G_PlayerHighlight and Color3.fromRGB(220, 30, 30) or Color3.fromRGB(15, 12, 28)
         highlightBtn.Text = "🔴 Highlight: " .. (_G.G_PlayerHighlight and "ON" or "OFF")
         highlightBtn.TextColor3 = _G.G_PlayerHighlight and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(200, 200, 200)
@@ -909,6 +937,7 @@ function VortexHub:RenderCombatCategory(contentArea)
         local currIdx = table.find(plist, _G.G_SilentAimSelectedPlayer) or 1
         local nextIdx = (currIdx % #plist) + 1
         _G.G_SilentAimSelectedPlayer = (plist[nextIdx] == "Más Cercano") and "" or plist[nextIdx]
+        currentSilentAimTarget = nil
         targetSelectBtn.Text = "🎯 Objetivo: " .. plist[nextIdx]
     end)
 
@@ -1180,5 +1209,5 @@ if getgenv then
     getgenv().VortexHub = VortexHub
 end
 
-print("[VortexHub] Motor de Auto-Aim Optimizado (Opción 1).")
+print("[VortexHub] Motor de Auto-Aim Cargado y Listo.")
 return VortexHub

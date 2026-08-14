@@ -1,10 +1,9 @@
 --[[
     VortexHub TargetLock.luau - Motor Universal de Auto-Aim & Silent Aim
-    - Arquitectura Desacoplada y Cacheada de Alto Rendimiento (Cero Lag / 60 FPS).
-    - Cacheo estático de SafeZones & Spawns para eliminar consultas repetitivas de Workspace.
-    - Bucle de búsqueda asíncrono atenuado (0.12s) desacoplado de RenderStepped.
-    - PlayerHighlight en Rojo Puro.
-    - Metamethods seguros con checkcaller() y ReplicatedStorage.Mouse.
+    - Orientación fluida del personaje en RenderStepped para conectar 100% de ataques melee, espadas y habilidades.
+    - Metamethods de Mouse.Hit, ReplicatedStorage.Mouse, Raycasts y RegisterHit.
+    - SafeZone Cache O(1) y PvP Check ultra ligero por atributos sin bloqueos de interfaz.
+    - Transición instantánea y sin congelamientos al alternar filtros de Jugadores y NPCs.
 --]]
 
 local Players = game:GetService("Players")
@@ -99,30 +98,14 @@ local function AX_InSafeZone(target)
     return false
 end
 
+-- PvP Check Ultrarrápido y Libre de Bloqueos
 local function AX_ReadPvPState(target)
-    local ok, on = pcall(function()
-        local attr = target:GetAttribute("PvpDisabled")
-        if attr ~= nil then return attr ~= true end
-        local main = target.PlayerGui and target.PlayerGui:FindFirstChild("Main")
-        if main then
-            local dis = main:FindFirstChild("PvpDisabled")
-            if dis then return not dis.Visible end
-            local pvp = main:FindFirstChild("Pvp")
-            if pvp then
-                local frame = pvp:FindFirstChild("Frame")
-                if frame then
-                    local btn = frame:FindFirstChild("PvpButton") or frame:FindFirstChildOfClass("TextButton")
-                    if btn and btn:IsA("TextButton") then
-                        local txt = tostring(btn.Text or ""):upper()
-                        if txt:find("OFF") then return false end
-                        if txt:find("ON") then return true end
-                    end
-                end
-            end
-        end
-        return true
+    if not target or not target:IsA("Player") then return true end
+    local ok, disabled = pcall(function()
+        return target:GetAttribute("PvpDisabled") == true
     end)
-    return not ok or on
+    if ok and disabled then return false end
+    return true
 end
 
 local function IsSilentAimAlly(p)
@@ -158,7 +141,7 @@ local function GetClosestTargetToCenter()
     local maxDist3D = maxRange or 3500
 
     -- 1. Objetivo Específico Seleccionado
-    if _G.G_SilentAimSelectedPlayer and _G.G_SilentAimSelectedPlayer ~= "" and _G.G_SilentAimSelectedPlayer ~= "Nearest" then
+    if _G.G_SilentAimSelectedPlayer and _G.G_SilentAimSelectedPlayer ~= "" and _G.G_SilentAimSelectedPlayer ~= "Nearest" and _G.G_SilentAimSelectedPlayer ~= "Más Cercano" then
         local targetP = Players:FindFirstChild(_G.G_SilentAimSelectedPlayer)
         if targetP and targetP ~= player and targetP.Character and not BlacklistedPlayers[targetP.Name] then
             if _G.G_AimbotPvPCheck and not AX_ReadPvPState(targetP) then return nil end
@@ -248,14 +231,14 @@ end
 local function updateTargetHighlight(targetChar)
     if not targetChar or not targetChar:IsA("Model") then
         if activeTargetHighlight then
-            activeTargetHighlight:Destroy()
+            pcall(function() activeTargetHighlight:Destroy() end)
             activeTargetHighlight = nil
         end
         return
     end
 
     if not activeTargetHighlight or activeTargetHighlight.Parent ~= targetChar then
-        if activeTargetHighlight then activeTargetHighlight:Destroy() end
+        if activeTargetHighlight then pcall(function() activeTargetHighlight:Destroy() end) end
         activeTargetHighlight = Instance.new("Highlight")
         activeTargetHighlight.Name = "VortexPlayerHighlight"
         activeTargetHighlight.Adornee = targetChar
@@ -269,12 +252,12 @@ local function updateTargetHighlight(targetChar)
 end
 
 --------------------------------------------------------------------------------
--- 4. BUCLE ASÍNCRONO DE BÚSQUEDA (DESACOPLADO DE RENDERSTEPPED)
+-- 4. BUCLE ASÍNCRONO DE BÚSQUEDA Y ORIENTACIÓN DE PERSONAJE
 --------------------------------------------------------------------------------
 
 task.spawn(function()
     while true do
-        task.wait(0.12)
+        task.wait(0.10)
         if _G.G_SilentAimSkill then
             pcall(function()
                 currentSilentAimTarget = GetClosestTargetToCenter()
@@ -297,6 +280,19 @@ task.spawn(function()
     end
 end)
 
+-- Orientación horizontal automática del personaje (Garantiza impacto de Melee, Espadas y Frutas)
+RunService.RenderStepped:Connect(function()
+    if _G.G_SilentAimSkill and currentSilentAimTarget then
+        local myChar = player and player.Character
+        local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+        if myRoot and currentSilentAimTarget and currentSilentAimTarget.Parent then
+            local targetPos = currentSilentAimTarget.Position
+            local lookAt = Vector3.new(targetPos.X, myRoot.Position.Y, targetPos.Z)
+            myRoot.CFrame = CFrame.new(myRoot.Position, lookAt)
+        end
+    end
+end)
+
 --------------------------------------------------------------------------------
 -- 5. METAMETHODS Y REPLICATEDSTORAGE.MOUSE (SILENT AIM SEGURO)
 --------------------------------------------------------------------------------
@@ -314,12 +310,12 @@ if MouseModule and typeof(MouseModule) == "table" then
         if mmt then setreadonly(mmt, false) else mmt = {}; setmetatable(MouseModule, mmt) end
         rawset(MouseModule, "Hit", nil); rawset(MouseModule, "Target", nil)
         mmt.__index = function(self, key)
-            if key == "Hit" then
+            if key == "Hit" or key == "hit" then
                 if _G.G_SilentAimSkill and currentSilentAimTarget and IsCurrentToolAimbotAllowed() and IsCurrentSlotAimbotAllowed() then
                     return CFrame.new(currentSilentAimTarget.Position)
                 end
                 return realStore.Hit
-            elseif key == "Target" then
+            elseif key == "Target" or key == "target" then
                 if _G.G_SilentAimSkill and currentSilentAimTarget and IsCurrentToolAimbotAllowed() and IsCurrentSlotAimbotAllowed() then
                     return currentSilentAimTarget
                 end
@@ -327,7 +323,11 @@ if MouseModule and typeof(MouseModule) == "table" then
             end
         end
         mmt.__newindex = function(self, key, value)
-            if key == "Hit" or key == "Target" then realStore[key] = value else rawset(self, key, value) end
+            if key == "Hit" or key == "Target" or key == "hit" or key == "target" then 
+                realStore[key] = value 
+            else 
+                rawset(self, key, value) 
+            end
         end
         setreadonly(mmt, true)
     end)
@@ -341,10 +341,10 @@ if hookmetamethod then
     pcall(function()
         oldIndex = hookmetamethod(game, "__index", newcclosure(function(self, key)
             if not checkcaller() then
-                if self == mouse and (key == "Hit" or key == "Target") then
+                if self == mouse and (key == "Hit" or key == "hit" or key == "Target" or key == "target") then
                     if _G.G_SilentAimSkill and currentSilentAimTarget and IsCurrentToolAimbotAllowed() and IsCurrentSlotAimbotAllowed() then
-                        if key == "Hit"    then return CFrame.new(currentSilentAimTarget.Position) end
-                        if key == "Target" then return currentSilentAimTarget end
+                        if key == "Hit" or key == "hit" then return CFrame.new(currentSilentAimTarget.Position) end
+                        if key == "Target" or key == "target" then return currentSilentAimTarget end
                     end
                 end
             end
@@ -422,10 +422,10 @@ else
             if setreadonly then pcall(setreadonly, mt, false) end
 
             mt.__index = newcclosure(function(self, key)
-                if not checkcaller() and self == mouse and (key == "Hit" or key == "Target") then
+                if not checkcaller() and self == mouse and (key == "Hit" or key == "hit" or key == "Target" or key == "target") then
                     if _G.G_SilentAimSkill and currentSilentAimTarget and IsCurrentToolAimbotAllowed() and IsCurrentSlotAimbotAllowed() then
-                        if key == "Hit"    then return CFrame.new(currentSilentAimTarget.Position) end
-                        if key == "Target" then return currentSilentAimTarget end
+                        if key == "Hit" or key == "hit" then return CFrame.new(currentSilentAimTarget.Position) end
+                        if key == "Target" or key == "target" then return currentSilentAimTarget end
                     end
                 end
                 return oldIndex(self, key)
