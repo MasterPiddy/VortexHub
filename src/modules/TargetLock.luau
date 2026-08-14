@@ -1,5 +1,10 @@
 --[[
     VortexHub TargetLock.luau - Motor Universal de Auto-Aim & Silent Aim
+    - Arquitectura Desacoplada y Cacheada de Alto Rendimiento (Cero Lag / 60 FPS).
+    - Cacheo estático de SafeZones & Spawns para eliminar consultas repetitivas de Workspace.
+    - Bucle de búsqueda asíncrono atenuado (0.12s) desacoplado de RenderStepped.
+    - PlayerHighlight en Rojo Puro.
+    - Metamethods seguros con checkcaller() y ReplicatedStorage.Mouse.
 --]]
 
 local Players = game:GetService("Players")
@@ -28,7 +33,72 @@ local currentSilentAimTarget = nil
 local activeTargetHighlight = nil
 local BlacklistedPlayers = {}
 
--- Comprobaciones de Seguridad de Estado y Zona
+--------------------------------------------------------------------------------
+-- 1. CACHEO DE SAFEZONES & COMPROBACIONES DE SEGURIDAD (ALTO RENDIMIENTO)
+--------------------------------------------------------------------------------
+
+local SafeZoneCache = { Zones = {}, Spawns = {}, LastUpdate = 0 }
+
+local function UpdateSafeZoneCache()
+    local now = tick()
+    if now - SafeZoneCache.LastUpdate < 5 then return end
+    SafeZoneCache.LastUpdate = now
+
+    local zones = {}
+    local spawns = {}
+    pcall(function()
+        local wo = Workspace:FindFirstChild("_WorldOrigin")
+        if wo then
+            local sz = wo:FindFirstChild("SafeZones")
+            if sz then
+                for _, zone in ipairs(sz:GetChildren()) do
+                    local mesh = zone:FindFirstChild("Mesh") or zone:FindFirstChildOfClass("SpecialMesh")
+                    local scale = mesh and mesh.Scale.X or 1
+                    local radius = (zone.Size.X * scale) / 2
+                    if radius > 0 then
+                        table.insert(zones, { Pos = zone.Position, Radius = radius })
+                    end
+                end
+            end
+            local ps = wo:FindFirstChild("PlayerSpawns")
+            if ps then
+                for _, folder in ipairs(ps:GetChildren()) do
+                    for _, sp in ipairs(folder:GetChildren()) do
+                        local part = sp:FindFirstChild("Part") or (sp:IsA("BasePart") and sp)
+                        if part then
+                            table.insert(spawns, part.Position)
+                        end
+                    end
+                end
+            end
+        end
+    end)
+    SafeZoneCache.Zones = zones
+    SafeZoneCache.Spawns = spawns
+end
+
+local function AX_InSafeZone(target)
+    if not target then return false end
+    local char = target.Character or target
+    local hrp = char and (char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Head"))
+    if not hrp then return false end
+
+    UpdateSafeZoneCache()
+    local pos = hrp.Position
+
+    for _, z in ipairs(SafeZoneCache.Zones) do
+        if (pos - z.Pos).Magnitude <= z.Radius then
+            return true
+        end
+    end
+    for _, spPos in ipairs(SafeZoneCache.Spawns) do
+        if (pos - spPos).Magnitude <= 350 then
+            return true
+        end
+    end
+    return false
+end
+
 local function AX_ReadPvPState(target)
     local ok, on = pcall(function()
         local attr = target:GetAttribute("PvpDisabled")
@@ -55,46 +125,6 @@ local function AX_ReadPvPState(target)
     return not ok or on
 end
 
-local function AX_InSafeZone(target)
-    local ok, inZone = pcall(function()
-        local char = target.Character or target
-        if not char then return false end
-        local hrp = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Head")
-        if not hrp then return false end
-        local wo = Workspace:FindFirstChild("_WorldOrigin")
-        if not wo then return false end
-
-        local safeZones = wo:FindFirstChild("SafeZones")
-        if safeZones then
-            for _, zone in pairs(safeZones:GetChildren()) do
-                local mesh = zone:FindFirstChild("Mesh") or zone:FindFirstChildOfClass("SpecialMesh")
-                if mesh then
-                    local realDiameter = zone.Size.X * (mesh.Scale and mesh.Scale.X or 1)
-                    local radius = realDiameter / 2
-                    if radius and radius > 0 then
-                        local dist = (zone.Position - hrp.Position).Magnitude
-                        if dist <= radius then return true end
-                    end
-                end
-            end
-        end
-
-        local spawns = wo:FindFirstChild("PlayerSpawns")
-        if spawns then
-            for _, folder in pairs(spawns:GetChildren()) do
-                for _, sp in pairs(folder:GetChildren()) do
-                    local part = sp:FindFirstChild("Part") or sp
-                    if part:IsA("BasePart") and (hrp.Position - part.Position).Magnitude <= 350 then
-                        return true
-                    end
-                end
-            end
-        end
-        return false
-    end)
-    return ok and inZone
-end
-
 local function IsSilentAimAlly(p)
     local main = player:FindFirstChild("PlayerGui") and player.PlayerGui:FindFirstChild("Main")
     local frame = main and main:FindFirstChild("Allies")
@@ -116,13 +146,18 @@ local function IsSilentAimEnemy(p)
     return true
 end
 
-function GetClosestTargetToCenter()
+--------------------------------------------------------------------------------
+-- 2. SELECCIÓN DE OBJETIVOS OPTIMIZADA
+--------------------------------------------------------------------------------
+
+local function GetClosestTargetToCenter()
     local myChar = player.Character
     local myHRP = myChar and myChar:FindFirstChild("HumanoidRootPart")
     if not myHRP then return nil end
 
     local maxDist3D = maxRange or 3500
 
+    -- 1. Objetivo Específico Seleccionado
     if _G.G_SilentAimSelectedPlayer and _G.G_SilentAimSelectedPlayer ~= "" and _G.G_SilentAimSelectedPlayer ~= "Nearest" then
         local targetP = Players:FindFirstChild(_G.G_SilentAimSelectedPlayer)
         if targetP and targetP ~= player and targetP.Character and not BlacklistedPlayers[targetP.Name] then
@@ -142,12 +177,12 @@ function GetClosestTargetToCenter()
     local closestPart = nil
     local shortest3DDist = maxDist3D
 
-    local function checkTargetPart(character)
+    local function checkTargetPart(character, isPlayer)
         if not character or character == myChar then return end
 
-        local p = Players:GetPlayerFromCharacter(character)
-        if p then
-            if p == player or BlacklistedPlayers[p.Name] then return end
+        if isPlayer then
+            local p = Players:GetPlayerFromCharacter(character)
+            if not p or p == player or BlacklistedPlayers[p.Name] then return end
             if _G.G_AimbotPvPCheck and not AX_ReadPvPState(p) then return end
             if _G.G_AimbotSafeZoneCheck and AX_InSafeZone(p) then return end
             if _G.G_SilentAimTeamCheck and not IsSilentAimEnemy(p) then return end
@@ -167,27 +202,30 @@ function GetClosestTargetToCenter()
         end
     end
 
-    local wantPlayers = _G.G_SilentAimTargetPlayers
-    local wantMobs = _G.G_SilentAimTargetMobs
-
-    if wantPlayers then
+    -- 2. Escaneo de Jugadores
+    if _G.G_SilentAimTargetPlayers then
         for _, p in ipairs(Players:GetPlayers()) do
-            if p ~= player then
-                checkTargetPart(p.Character)
+            if p ~= player and p.Character then
+                checkTargetPart(p.Character, true)
             end
         end
     end
 
-    if wantMobs then
+    -- 3. Escaneo Focalizado de NPCs/Mobs
+    if _G.G_SilentAimTargetMobs then
         local enemies = Workspace:FindFirstChild("Enemies")
         if enemies then
             for _, enemy in ipairs(enemies:GetChildren()) do
-                checkTargetPart(enemy)
+                checkTargetPart(enemy, false)
             end
-        end
-        for _, obj in ipairs(Workspace:GetChildren()) do
-            if obj:IsA("Model") and obj ~= myChar and obj:FindFirstChildOfClass("Humanoid") and not Players:GetPlayerFromCharacter(obj) then
-                checkTargetPart(obj)
+        else
+            for _, folderName in ipairs({"NPCs", "Mobs", "Live", "Characters"}) do
+                local f = Workspace:FindFirstChild(folderName)
+                if f then
+                    for _, enemy in ipairs(f:GetChildren()) do
+                        checkTargetPart(enemy, false)
+                    end
+                end
             end
         end
     end
@@ -202,6 +240,10 @@ end
 local function IsCurrentSlotAimbotAllowed(explicitSkillKey)
     return true
 end
+
+--------------------------------------------------------------------------------
+-- 3. PLAYER HIGHLIGHT (ROJO PURO)
+--------------------------------------------------------------------------------
 
 local function updateTargetHighlight(targetChar)
     if not targetChar or not targetChar:IsA("Model") then
@@ -226,23 +268,38 @@ local function updateTargetHighlight(targetChar)
     end
 end
 
--- RenderStepped Tracker & Highlight
-RunService.RenderStepped:Connect(function()
-    pcall(function()
-        currentSilentAimTarget = GetClosestTargetToCenter()
+--------------------------------------------------------------------------------
+-- 4. BUCLE ASÍNCRONO DE BÚSQUEDA (DESACOPLADO DE RENDERSTEPPED)
+--------------------------------------------------------------------------------
 
-        if _G.G_PlayerHighlight and _G.G_SilentAimSkill and currentSilentAimTarget then
-            local targetChar = currentSilentAimTarget.Parent
-            if targetChar and targetChar:FindFirstChildOfClass("Humanoid") and targetChar.Humanoid.Health > 0 then
-                updateTargetHighlight(targetChar)
-            else
-                updateTargetHighlight(nil)
-            end
+task.spawn(function()
+    while true do
+        task.wait(0.12)
+        if _G.G_SilentAimSkill then
+            pcall(function()
+                currentSilentAimTarget = GetClosestTargetToCenter()
+
+                if _G.G_PlayerHighlight and currentSilentAimTarget then
+                    local targetChar = currentSilentAimTarget.Parent
+                    if targetChar and targetChar:FindFirstChildOfClass("Humanoid") and targetChar.Humanoid.Health > 0 then
+                        updateTargetHighlight(targetChar)
+                    else
+                        updateTargetHighlight(nil)
+                    end
+                else
+                    updateTargetHighlight(nil)
+                end
+            end)
         else
+            currentSilentAimTarget = nil
             updateTargetHighlight(nil)
         end
-    end)
+    end
 end)
+
+--------------------------------------------------------------------------------
+-- 5. METAMETHODS Y REPLICATEDSTORAGE.MOUSE (SILENT AIM SEGURO)
+--------------------------------------------------------------------------------
 
 -- ReplicatedStorage.Mouse Metatable Hook
 local MouseModuleInstance = ReplicatedStorage:FindFirstChild("Mouse")
