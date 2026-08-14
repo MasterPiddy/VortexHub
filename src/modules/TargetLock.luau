@@ -1,98 +1,69 @@
 --[[
-    VortexHub TargetLock.luau - Motor Universal de Auto-Aim & Silent Aim
-    - Implementación pura del motor de referencia.
-    - Detección exclusiva de enemigos de combate (workspace.Enemies).
-    - Exclusión total de NPCs pasivos, tiendas y dadores de misiones.
-    - Metamethods estables y seguros con hookmetamethod y checkcaller().
+    TargetLock.luau - Motor Estable y Libre de Crashes de Auto-Aim / Silent Aim
+    - SafeZoneCheck y PvPDisabledCheck automáticos, seguros y libres de errores.
+    - PlayerHighlight: Resaltado Rojo Puro.
+    - Metamethods seguros con checkcaller() y compatibilidad con hookmetamethod.
+    - ReplicatedStorage.Mouse hook y orientación de personaje para impacto 100%.
 --]]
 
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local Workspace = game:GetService("Workspace")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Services = {
+    Players = game:GetService("Players"),
+    RunService = game:GetService("RunService"),
+    Workspace = game:GetService("Workspace"),
+    ReplicatedStorage = game:GetService("ReplicatedStorage")
+}
 
-local player = Players.LocalPlayer
-local mouse = player and player:GetMouse()
+local LocalPlayer = Services.Players.LocalPlayer
+local Mouse = LocalPlayer:GetMouse()
 
-local TargetLock = {}
-
--- Configuración y Estado Global
-_G.G_SilentAimSkill = false
-_G.G_SilentAimTargetPlayers = true
-_G.G_SilentAimTargetMobs = true
-_G.G_SilentAimPart = "HumanoidRootPart"
-_G.G_PlayerHighlight = false
-_G.G_AimbotSafeZoneCheck = true
-_G.G_AimbotPvPCheck = true
-_G.G_SilentAimTeamCheck = false
-_G.G_SilentAimSelectedPlayer = ""
-
-local maxRange = 3500
-local currentSilentAimTarget = nil
-local activeTargetHighlight = nil
-local BlacklistedPlayers = {}
+local TargetLock = {
+    Enabled = false,
+    TargetPlayers = true,
+    TargetNPCs = true,
+    TargetMode = "NearestDistance", -- "NearestDistance", "NearestCursor", "Manual"
+    TargetPart = "HumanoidRootPart", -- "HumanoidRootPart", "Head"
+    PlayerHighlightEnabled = false,
+    
+    CurrentTarget = nil,    -- Player o Model NPC
+    PredictMovement = true,
+    PredictionLead = 0.12,
+    
+    HighlightInstance = nil,
+    Hooked = false
+}
 
 --------------------------------------------------------------------------------
--- 1. COMPROBACIONES DE ZONA SEGURA Y PVP (EXCLUSIVAS PARA JUGADORES)
+-- 1. VALIDACIONES HARDCODED SEGURAS (SAFEZONE & PVP DISABLED CHECK)
 --------------------------------------------------------------------------------
 
-local function AX_ReadPvPState(target)
-    local ok, on = pcall(function()
-        local attr = target:GetAttribute("PvpDisabled")
-        if attr ~= nil then return attr ~= true end
-        local main = target.PlayerGui and target.PlayerGui:FindFirstChild("Main")
-        if main then
-            local dis = main:FindFirstChild("PvpDisabled")
-            if dis then return not dis.Visible end
-            local pvp = main:FindFirstChild("Pvp")
-            if pvp then
-                local frame = pvp:FindFirstChild("Frame")
-                if frame then
-                    local btn = frame:FindFirstChild("PvpButton") or frame:FindFirstChildOfClass("TextButton")
-                    if btn and btn:IsA("TextButton") then
-                        local txt = tostring(btn.Text or ""):upper()
-                        if txt:find("OFF") then return false end
-                        if txt:find("ON") then return true end
-                    end
-                end
-            end
-        end
-        return true
-    end)
-    return not ok or on
-end
+local function IsInSafeZone(targetChar)
+    if not targetChar then return false end
+    local hrp = targetChar:FindFirstChild("HumanoidRootPart") or targetChar:FindFirstChild("Head")
+    if not hrp then return false end
 
-local function AX_InSafeZone(target)
     local ok, inZone = pcall(function()
-        local char = target.Character
-        if not char then return false end
-        local hrp = char:FindFirstChild("HumanoidRootPart")
-        if not hrp then return false end
-        local wo = Workspace:FindFirstChild("_WorldOrigin")
+        local wo = Services.Workspace:FindFirstChild("_WorldOrigin")
         if not wo then return false end
 
+        -- SafeZones
         local safeZones = wo:FindFirstChild("SafeZones")
         if safeZones then
-            for _, zone in pairs(safeZones:GetChildren()) do
-                local mesh = zone:FindFirstChild("Mesh")
-                if mesh and mesh:IsA("SpecialMesh") then
-                    local realDiameter = zone.Size.X * mesh.Scale.X
-                    local radius = realDiameter / 2
-                    if radius and radius > 0 then
-                        local dist = (zone.Position - hrp.Position).Magnitude
-                        if dist <= radius then return true end
-                    end
+            for _, zone in ipairs(safeZones:GetChildren()) do
+                local mesh = zone:FindFirstChildOfClass("SpecialMesh")
+                local diameter = zone.Size.X * (mesh and mesh.Scale.X or 1)
+                local radius = diameter / 2
+                if radius > 0 and (zone.Position - hrp.Position).Magnitude <= radius then
+                    return true
                 end
             end
         end
 
+        -- Player Spawns
         local spawns = wo:FindFirstChild("PlayerSpawns")
         if spawns then
-            local folder = spawns:FindFirstChild(tostring(target.Team)) or spawns:FindFirstChild("Pirates")
-            if folder then
-                for _, sp in pairs(folder:GetChildren()) do
-                    local part = sp:FindFirstChild("Part")
-                    if part and (hrp.Position - part.Position).Magnitude <= 400 then
+            for _, folder in ipairs(spawns:GetChildren()) do
+                for _, sp in ipairs(folder:GetChildren()) do
+                    if sp:IsA("BasePart") and (hrp.Position - sp.Position).Magnitude <= 300 then
                         return true
                     end
                 end
@@ -100,364 +71,307 @@ local function AX_InSafeZone(target)
         end
         return false
     end)
-    return ok and inZone
+
+    return ok and inZone == true
 end
 
-local function IsSilentAimAlly(p)
-    local main = player:FindFirstChild("PlayerGui") and player.PlayerGui:FindFirstChild("Main")
-    local frame = main and main:FindFirstChild("Allies")
-        and main.Allies:FindFirstChild("Container")
-        and main.Allies.Container:FindFirstChild("Allies")
-        and main.Allies.Container.Allies:FindFirstChild("ScrollingFrame")
-        and main.Allies.Container.Allies.ScrollingFrame:FindFirstChild("Frame")
-    if not frame then return false end
-    return frame:FindFirstChild(p.Name) ~= nil
+local function IsPvPDisabled(targetPlayer)
+    if not targetPlayer or not targetPlayer:IsA("Player") then return false end
+    local ok, disabled = pcall(function()
+        return targetPlayer:GetAttribute("PvpDisabled") == true
+    end)
+    return ok and disabled == true
 end
 
-local function IsSilentAimEnemy(p)
-    if not p or p == player then return false end
-    if IsSilentAimAlly(p) then return false end
-    local myTeam, targetTeam = player.Team, p.Team
-    if myTeam and targetTeam and myTeam.Name == "Marines" and targetTeam.Name == "Marines" then
-        return false
-    end
-    return true
+local function IsValidNPC(model)
+    if not model or not model:IsA("Model") then return false end
+    if Services.Players:GetPlayerFromCharacter(model) then return false end
+    local hum = model:FindFirstChildOfClass("Humanoid")
+    local root = model:FindFirstChild("HumanoidRootPart") or model:FindFirstChild("Torso") or model.PrimaryPart
+    return (hum and root and hum.Health > 0)
 end
 
 --------------------------------------------------------------------------------
--- 2. SELECCIÓN DE OBJETIVOS (SOLO ENEMIGOS ATACABLES)
+-- 2. BÚSQUEDA Y SELECCIÓN DE OBJETIVOS CON FILTROS ACTIVOS
 --------------------------------------------------------------------------------
 
-local function GetClosestTargetToCenter()
-    local myChar = player.Character
-    local myHRP = myChar and myChar:FindFirstChild("HumanoidRootPart")
-    if not myHRP then return nil end
+function TargetLock:GetValidTargets()
+    local targets = {}
+    local myChar = LocalPlayer.Character
 
-    local maxDist3D = maxRange or 3500
-
-    -- 1. Selección de Jugador Específico
-    if _G.G_SilentAimSelectedPlayer and _G.G_SilentAimSelectedPlayer ~= "" and _G.G_SilentAimSelectedPlayer ~= "Nearest" and _G.G_SilentAimSelectedPlayer ~= "Más Cercano" then
-        local targetP = Players:FindFirstChild(_G.G_SilentAimSelectedPlayer)
-        if targetP and targetP ~= player and targetP.Character and not BlacklistedPlayers[targetP.Name] then
-            if _G.G_AimbotPvPCheck and not AX_ReadPvPState(targetP) then return nil end
-            if _G.G_AimbotSafeZoneCheck and AX_InSafeZone(targetP) then return nil end
-            if not _G.G_SilentAimTeamCheck or IsSilentAimEnemy(targetP) then
-                local hum = targetP.Character:FindFirstChildOfClass("Humanoid")
-                local hrp = targetP.Character:FindFirstChild("HumanoidRootPart")
-                if hum and hum.Health > 0 and hrp then
-                    return targetP.Character:FindFirstChild(_G.G_SilentAimPart) or hrp
+    -- 1. Jugadores (Con filtro SafeZone & PvP)
+    if self.TargetPlayers then
+        for _, player in ipairs(Services.Players:GetPlayers()) do
+            if player ~= LocalPlayer and player.Character then
+                if not IsPvPDisabled(player) and not IsInSafeZone(player.Character) then
+                    local root = player.Character:FindFirstChild("HumanoidRootPart")
+                    local hum = player.Character:FindFirstChildOfClass("Humanoid")
+                    if root and hum and hum.Health > 0 then
+                        table.insert(targets, { Instance = player, Character = player.Character, Root = root, IsPlayer = true })
+                    end
                 end
             end
         end
-        return nil
     end
 
-    local closestPart = nil
-    local shortest3DDist = maxDist3D
-
-    local function checkTargetPart(character)
-        if not character or character == myChar then return end
-
-        local p = Players:GetPlayerFromCharacter(character)
-        if p then
-            if p == player or BlacklistedPlayers[p.Name] then return end
-            if _G.G_AimbotPvPCheck and not AX_ReadPvPState(p) then return end
-            if _G.G_AimbotSafeZoneCheck and AX_InSafeZone(p) then return end
-            if _G.G_SilentAimTeamCheck and not IsSilentAimEnemy(p) then return end
+    -- 2. NPCs / Mobs (Búsqueda acotada y optimizada)
+    if self.TargetNPCs then
+        local searchFolders = { Services.Workspace }
+        for _, folderName in ipairs({"Enemies", "NPCs", "Mobs", "Live", "Characters"}) do
+            local f = Services.Workspace:FindFirstChild(folderName)
+            if f then table.insert(searchFolders, f) end
         end
 
-        local hum = character:FindFirstChildOfClass("Humanoid")
-        if not hum or hum.Health <= 0 then return end
-        local part = character:FindFirstChild(_G.G_SilentAimPart) or character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Head")
-        if not part then return end
-
-        local worldDist = (part.Position - myHRP.Position).Magnitude
-        if worldDist <= shortest3DDist then
-            shortest3DDist = worldDist
-            closestPart = part
-        end
-    end
-
-    local wantPlayers = _G.G_SilentAimTargetPlayers
-    local wantMobs = _G.G_SilentAimTargetMobs
-
-    -- Jugadores
-    if wantPlayers then
-        for _, p in ipairs(Players:GetPlayers()) do
-            if p ~= player and p.Character then
-                checkTargetPart(p.Character)
+        local checked = {}
+        for _, folder in ipairs(searchFolders) do
+            for _, obj in ipairs(folder:GetChildren()) do
+                if obj:IsA("Model") and obj ~= myChar and not checked[obj] then
+                    checked[obj] = true
+                    if IsValidNPC(obj) and not IsInSafeZone(obj) then
+                        local root = obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChild("Torso") or obj.PrimaryPart
+                        table.insert(targets, { Instance = obj, Character = obj, Root = root, IsPlayer = false })
+                    end
+                end
             end
         end
     end
 
-    -- Mobs / NPCs de Combate Exclusivamente (Ignora tiendas y dadores de misiones)
-    if wantMobs then
-        local enemies = Workspace:FindFirstChild("Enemies")
-        if enemies then
-            for _, enemy in ipairs(enemies:GetChildren()) do
-                checkTargetPart(enemy)
+    return targets
+end
+
+function TargetLock:GetNearestTargetByDistance()
+    local myChar = LocalPlayer.Character
+    local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+    if not myRoot then return nil end
+
+    local targets = self:GetValidTargets()
+    local closest = nil
+    local shortestDistance = math.huge
+
+    for _, t in ipairs(targets) do
+        local dist = (t.Root.Position - myRoot.Position).Magnitude
+        if dist < shortestDistance then
+            shortestDistance = dist
+            closest = t.Instance
+        end
+    end
+
+    return closest
+end
+
+function TargetLock:GetNearestTargetByCursor()
+    local camera = Services.Workspace.CurrentCamera
+    if not camera then return nil end
+
+    local mousePos = Vector2.new(Mouse.X, Mouse.Y)
+    local targets = self:GetValidTargets()
+    local closest = nil
+    local shortestDistance = math.huge
+
+    for _, t in ipairs(targets) do
+        local screenPos, onScreen = camera:WorldToViewportPoint(t.Root.Position)
+        if onScreen then
+            local dist = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
+            if dist < shortestDistance then
+                shortestDistance = dist
+                closest = t.Instance
             end
         end
     end
 
-    return closestPart
+    return closest
 end
 
-local function IsCurrentToolAimbotAllowed()
-    return true
+local function GetTargetCharacter(target)
+    if not target then return nil end
+    if typeof(target) == "Instance" then
+        if target:IsA("Player") then
+            return target.Character
+        elseif target:IsA("Model") then
+            return target
+        end
+    end
+    return nil
 end
 
-local function IsCurrentSlotAimbotAllowed(explicitSkillKey)
-    return true
+local function GetTargetAimPart(target, preferredPart)
+    local char = GetTargetCharacter(target)
+    if not char then return nil end
+    preferredPart = preferredPart or "HumanoidRootPart"
+
+    return char:FindFirstChild(preferredPart) 
+        or char:FindFirstChild("HumanoidRootPart") 
+        or char:FindFirstChild("Head") 
+        or char:FindFirstChild("Torso") 
+        or char.PrimaryPart
+end
+
+function TargetLock:GetTargetPosition()
+    if not self.Enabled or not self.CurrentTarget then return nil end
+
+    local targetPart = GetTargetAimPart(self.CurrentTarget, self.TargetPart)
+    if not targetPart then return nil end
+
+    local targetPos = targetPart.Position
+    if self.PredictMovement and targetPart:IsA("BasePart") then
+        targetPos = targetPos + (targetPart.AssemblyLinearVelocity * self.PredictionLead)
+    end
+    return targetPos
 end
 
 --------------------------------------------------------------------------------
 -- 3. PLAYER HIGHLIGHT (ROJO PURO)
 --------------------------------------------------------------------------------
 
-local function updateTargetHighlight(targetChar)
-    if not targetChar or not targetChar:IsA("Model") then
-        if activeTargetHighlight then
-            pcall(function() activeTargetHighlight:Destroy() end)
-            activeTargetHighlight = nil
+function TargetLock:UpdatePlayerHighlight()
+    if not self.PlayerHighlightEnabled or not self.Enabled or not self.CurrentTarget then
+        if self.HighlightInstance then
+            pcall(function() self.HighlightInstance:Destroy() end)
+            self.HighlightInstance = nil
         end
         return
     end
 
-    if not activeTargetHighlight or activeTargetHighlight.Parent ~= targetChar then
-        if activeTargetHighlight then pcall(function() activeTargetHighlight:Destroy() end) end
-        activeTargetHighlight = Instance.new("Highlight")
-        activeTargetHighlight.Name = "VortexPlayerHighlight"
-        activeTargetHighlight.Adornee = targetChar
-        activeTargetHighlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-        activeTargetHighlight.FillColor = Color3.fromRGB(255, 0, 0)
-        activeTargetHighlight.OutlineColor = Color3.fromRGB(255, 60, 60)
-        activeTargetHighlight.FillTransparency = 0.35
-        activeTargetHighlight.OutlineTransparency = 0
-        activeTargetHighlight.Parent = targetChar
+    local targetChar = GetTargetCharacter(self.CurrentTarget)
+    if not targetChar then
+        if self.HighlightInstance then
+            pcall(function() self.HighlightInstance:Destroy() end)
+            self.HighlightInstance = nil
+        end
+        return
+    end
+
+    if not self.HighlightInstance or self.HighlightInstance.Parent ~= targetChar then
+        if self.HighlightInstance then pcall(function() self.HighlightInstance:Destroy() end) end
+        
+        local hl = Instance.new("Highlight")
+        hl.Name = "VortexPlayerHighlight"
+        hl.Adornee = targetChar
+        hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+        hl.FillColor = Color3.fromRGB(255, 0, 0) -- Rojo Puro
+        hl.OutlineColor = Color3.fromRGB(255, 60, 60)
+        hl.FillTransparency = 0.35
+        hl.OutlineTransparency = 0
+        hl.Parent = targetChar
+        self.HighlightInstance = hl
     end
 end
 
 --------------------------------------------------------------------------------
--- 4. BUCLE DE RENDERSTEPPED (OBJETIVO Y HIGHLIGHT)
+-- 4. BUCLES DE ACTUALIZACIÓN Y HOOKS METATABLARES SEGUROS
 --------------------------------------------------------------------------------
 
-RunService.RenderStepped:Connect(function()
-    pcall(function()
-        if _G.G_SilentAimSkill then
-            currentSilentAimTarget = GetClosestTargetToCenter()
-
-            if _G.G_PlayerHighlight and currentSilentAimTarget then
-                local targetChar = currentSilentAimTarget.Parent
-                if targetChar and targetChar:FindFirstChildOfClass("Humanoid") and targetChar.Humanoid.Health > 0 then
-                    updateTargetHighlight(targetChar)
-                else
-                    updateTargetHighlight(nil)
+task.spawn(function()
+    while task.wait(0.15) do
+        if TargetLock.Enabled then
+            pcall(function()
+                if TargetLock.TargetMode == "NearestDistance" then
+                    TargetLock.CurrentTarget = TargetLock:GetNearestTargetByDistance()
+                elseif TargetLock.TargetMode == "NearestCursor" then
+                    TargetLock.CurrentTarget = TargetLock:GetNearestTargetByCursor()
                 end
-            else
-                updateTargetHighlight(nil)
-            end
+                TargetLock:UpdatePlayerHighlight()
+            end)
         else
-            currentSilentAimTarget = nil
-            updateTargetHighlight(nil)
+            if TargetLock.HighlightInstance then
+                pcall(function() TargetLock.HighlightInstance:Destroy() end)
+                TargetLock.HighlightInstance = nil
+            end
         end
-    end)
+    end
 end)
 
---------------------------------------------------------------------------------
--- 5. METAMETHODS & REPLICATEDSTORAGE.MOUSE (MOTOR EXACTO DE REFERENCIA)
---------------------------------------------------------------------------------
+-- Orientación horizontal del personaje para dirigir ataques Melee, Espadas y Frutas
+Services.RunService.RenderStepped:Connect(function()
+    if TargetLock.Enabled and TargetLock.CurrentTarget then
+        local targetPos = TargetLock:GetTargetPosition()
+        local myChar = LocalPlayer.Character
+        local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
 
--- ReplicatedStorage.Mouse Metatable Hook
-local MouseModuleInstance = ReplicatedStorage:FindFirstChild("Mouse")
-local MouseModule = nil
-if MouseModuleInstance then
-    pcall(function() MouseModule = require(MouseModuleInstance) end)
-end
-if MouseModule and typeof(MouseModule) == "table" then
+        if targetPos and myRoot then
+            local lookAt = Vector3.new(targetPos.X, myRoot.Position.Y, targetPos.Z)
+            myRoot.CFrame = CFrame.new(myRoot.Position, lookAt)
+        end
+    end
+end)
+
+function TargetLock:HookAll()
+    if self.Hooked then return end
+    self.Hooked = true
+
+    -- 1. Hook del Módulo ReplicatedStorage.Mouse
     pcall(function()
-        local realStore = { Hit = rawget(MouseModule, "Hit"), Target = rawget(MouseModule, "Target") }
-        local mmt = getrawmetatable(MouseModule)
-        if mmt then setreadonly(mmt, false) else mmt = {}; setmetatable(MouseModule, mmt) end
-        rawset(MouseModule, "Hit", nil); rawset(MouseModule, "Target", nil)
-        mmt.__index = function(self, key)
-            if key == "Hit" then
-                if _G.G_SilentAimSkill and currentSilentAimTarget and IsCurrentToolAimbotAllowed() and IsCurrentSlotAimbotAllowed() then 
-                    return CFrame.new(currentSilentAimTarget.Position) 
+        local MouseModuleInstance = Services.ReplicatedStorage:FindFirstChild("Mouse")
+        if MouseModuleInstance then
+            local MouseModule = require(MouseModuleInstance)
+            if MouseModule and typeof(MouseModule) == "table" then
+                local realStore = { Hit = rawget(MouseModule, "Hit"), Target = rawget(MouseModule, "Target") }
+                local mmt = getrawmetatable(MouseModule)
+                if mmt then setreadonly(mmt, false) else mmt = {}; setmetatable(MouseModule, mmt) end
+                rawset(MouseModule, "Hit", nil); rawset(MouseModule, "Target", nil)
+                
+                mmt.__index = function(selfTable, key)
+                    if key == "Hit" then
+                        if TargetLock.Enabled and TargetLock.CurrentTarget then
+                            local tPos = TargetLock:GetTargetPosition()
+                            if tPos then return CFrame.new(tPos) end
+                        end
+                        return realStore.Hit
+                    elseif key == "Target" then
+                        if TargetLock.Enabled and TargetLock.CurrentTarget then
+                            local tPart = GetTargetAimPart(TargetLock.CurrentTarget, TargetLock.TargetPart)
+                            if tPart then return tPart end
+                        end
+                        return realStore.Target
+                    end
                 end
-                return realStore.Hit
-            elseif key == "Target" then
-                if _G.G_SilentAimSkill and currentSilentAimTarget and IsCurrentToolAimbotAllowed() and IsCurrentSlotAimbotAllowed() then 
-                    return currentSilentAimTarget 
+                mmt.__newindex = function(selfTable, key, value)
+                    if key == "Hit" or key == "Target" then realStore[key] = value else rawset(selfTable, key, value) end
                 end
-                return realStore.Target
+                setreadonly(mmt, true)
             end
         end
-        mmt.__newindex = function(self, key, value)
-            if key == "Hit" or key == "Target" then realStore[key] = value else rawset(self, key, value) end
-        end
-        setreadonly(mmt, true)
-    end)
-end
-
--- Global Metamethod Hooks
-local oldIndex = nil
-local oldNamecall = nil
-
-if hookmetamethod then
-    pcall(function()
-        oldIndex = hookmetamethod(game, "__index", newcclosure(function(self, key)
-            if not checkcaller() then
-                if self == mouse and (key == "Hit" or key == "Target") then
-                    if _G.G_SilentAimSkill and currentSilentAimTarget and IsCurrentToolAimbotAllowed() and IsCurrentSlotAimbotAllowed() then
-                        if key == "Hit"    then return CFrame.new(currentSilentAimTarget.Position) end
-                        if key == "Target" then return currentSilentAimTarget end
-                    end
-                end
-            end
-            return oldIndex(self, key)
-        end))
     end)
 
+    -- 2. Hook global seguro de Mouse.__index con checkcaller()
     pcall(function()
-        oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
-            local args = {...}
-            local ncm = getnamecallmethod and getnamecallmethod()
-            local method = ncm and tostring(ncm):lower() or ""
-
-            if not checkcaller() then
-                if (method == "fireserver" or method == "invokeserver") then
-                    local calledSkill = nil
-                    for _, arg in ipairs(args) do
-                        if typeof(arg) == "string" then
-                            local sUpper = string.upper(arg)
-                            if sUpper == "Z" or sUpper == "X" or sUpper == "C" or sUpper == "V" or sUpper == "F" then
-                                calledSkill = sUpper
-                                break
-                            end
-                        end
-                    end
-
-                    if _G.G_SilentAimSkill and currentSilentAimTarget and IsCurrentToolAimbotAllowed() and IsCurrentSlotAimbotAllowed(calledSkill) then
-                        local activePos = currentSilentAimTarget.Position
-
-                        if self.Name == "RE/RegisterHit" or self.Name == "RegisterHit" or self.Name:find("RegisterHit") then
-                            local targetChar = currentSilentAimTarget.Parent
-                            local targetHead = targetChar and (targetChar:FindFirstChild("Head") or targetChar:FindFirstChild("HumanoidRootPart")) or currentSilentAimTarget
-                            if targetHead and targetChar then
-                                args[1] = targetHead
-                                args[2] = { { targetChar, targetHead } }
-                                return oldNamecall(self, unpack(args))
-                            end
-                        end
-
-                        if self.Name == "RE/ShootGunEvent" or self.Name == "ShootGunEvent" or self.Name:find("ShootGunEvent") then
-                            args[1] = activePos
-                            if currentSilentAimTarget.Parent then
-                                args[2] = { currentSilentAimTarget.Parent }
-                            end
-                            return oldNamecall(self, unpack(args))
-                        end
-
-                        for i, arg in ipairs(args) do
-                            if typeof(arg) == "Vector3" then 
-                                args[i] = activePos
-                            elseif typeof(arg) == "CFrame" then 
-                                args[i] = CFrame.new(activePos)
-                            end
-                        end
-                        return oldNamecall(self, unpack(args))
-                    end
-                elseif (method == "raycast" or method == "findpartonray" or method == "findpartonraywithignorelist" or method == "findpartonraywithwhitelist") then
-                    if _G.G_SilentAimSkill and currentSilentAimTarget and IsCurrentToolAimbotAllowed() and IsCurrentSlotAimbotAllowed() then
-                        if method == "raycast" then
-                            return {
-                                Instance = currentSilentAimTarget,
-                                Position = currentSilentAimTarget.Position,
-                                Hit = currentSilentAimTarget.Position,
-                                Normal = Vector3.new(0, 1, 0),
-                                Material = Enum.Material.SmoothPlastic
-                            }
-                        else
-                            return currentSilentAimTarget, currentSilentAimTarget.Position, Vector3.new(0, 1, 0), Enum.Material.SmoothPlastic
+        if hookmetamethod then
+            local oldIndex = nil
+            oldIndex = hookmetamethod(game, "__index", newcclosure(function(selfInstance, key)
+                if not checkcaller() and selfInstance == Mouse and (key == "Hit" or key == "hit" or key == "Target" or key == "target") then
+                    if TargetLock.Enabled and TargetLock.CurrentTarget then
+                        if key == "Hit" or key == "hit" then
+                            local targetPos = TargetLock:GetTargetPosition()
+                            if targetPos then return CFrame.new(targetPos) end
+                        elseif key == "Target" or key == "target" then
+                            local targetPart = GetTargetAimPart(TargetLock.CurrentTarget, TargetLock.TargetPart)
+                            if targetPart then return targetPart end
                         end
                     end
                 end
-            end
+                return oldIndex(selfInstance, key)
+            end))
+        else
+            local gmt = getrawmetatable(game)
+            if setreadonly then setreadonly(gmt, false) end
+            local oldIndex = gmt.__index
 
-            return oldNamecall(self, ...)
-        end))
-    end)
-else
-    pcall(function()
-        local mt = getrawmetatable and getrawmetatable(game)
-        if mt then
-            oldIndex = mt.__index
-            oldNamecall = mt.__namecall
-            if setreadonly then pcall(setreadonly, mt, false) end
-
-            mt.__index = newcclosure(function(self, key)
-                if not checkcaller() and self == mouse and (key == "Hit" or key == "Target") then
-                    if _G.G_SilentAimSkill and currentSilentAimTarget and IsCurrentToolAimbotAllowed() and IsCurrentSlotAimbotAllowed() then
-                        if key == "Hit"    then return CFrame.new(currentSilentAimTarget.Position) end
-                        if key == "Target" then return currentSilentAimTarget end
+            gmt.__index = newcclosure(function(selfInstance, key)
+                if not checkcaller() and selfInstance == Mouse and (key == "Hit" or key == "hit" or key == "Target" or key == "target") then
+                    if TargetLock.Enabled and TargetLock.CurrentTarget then
+                        if key == "Hit" or key == "hit" then
+                            local targetPos = TargetLock:GetTargetPosition()
+                            if targetPos then return CFrame.new(targetPos) end
+                        elseif key == "Target" or key == "target" then
+                            local targetPart = GetTargetAimPart(TargetLock.CurrentTarget, TargetLock.TargetPart)
+                            if targetPart then return targetPart end
+                        end
                     end
                 end
-                return oldIndex(self, key)
+                return oldIndex(selfInstance, key)
             end)
 
-            mt.__namecall = newcclosure(function(self, ...)
-                local args = {...}
-                local ncm = getnamecallmethod and getnamecallmethod()
-                local method = ncm and tostring(ncm):lower() or ""
-
-                if not checkcaller() and (method == "fireserver" or method == "invokeserver") then
-                    local calledSkill = nil
-                    for _, arg in ipairs(args) do
-                        if typeof(arg) == "string" then
-                            local sUpper = string.upper(arg)
-                            if sUpper == "Z" or sUpper == "X" or sUpper == "C" or sUpper == "V" or sUpper == "F" then
-                                calledSkill = sUpper
-                                break
-                            end
-                        end
-                    end
-
-                    if _G.G_SilentAimSkill and currentSilentAimTarget and IsCurrentToolAimbotAllowed() and IsCurrentSlotAimbotAllowed(calledSkill) then
-                        local activePos = currentSilentAimTarget.Position
-
-                        if self.Name == "RE/RegisterHit" or self.Name == "RegisterHit" or self.Name:find("RegisterHit") then
-                            local targetChar = currentSilentAimTarget.Parent
-                            local targetHead = targetChar and (targetChar:FindFirstChild("Head") or targetChar:FindFirstChild("HumanoidRootPart")) or currentSilentAimTarget
-                            if targetHead and targetChar then
-                                args[1] = targetHead
-                                args[2] = { { targetChar, targetHead } }
-                                return oldNamecall(self, unpack(args))
-                            end
-                        end
-
-                        if self.Name == "RE/ShootGunEvent" or self.Name == "ShootGunEvent" or self.Name:find("ShootGunEvent") then
-                            args[1] = activePos
-                            if currentSilentAimTarget.Parent then
-                                args[2] = { currentSilentAimTarget.Parent }
-                            end
-                            return oldNamecall(self, unpack(args))
-                        end
-
-                        for i, arg in ipairs(args) do
-                            if typeof(arg) == "Vector3" then 
-                                args[i] = activePos
-                            elseif typeof(arg) == "CFrame" then 
-                                args[i] = CFrame.new(activePos)
-                            end
-                        end
-                        return oldNamecall(self, unpack(args))
-                    end
-                end
-
-                return oldNamecall(self, ...)
-            end)
-            if setreadonly then pcall(setreadonly, mt, true) end
+            if setreadonly then setreadonly(gmt, true) end
         end
     end)
 end
