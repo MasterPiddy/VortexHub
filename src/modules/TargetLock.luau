@@ -1,17 +1,19 @@
 --[[
-    TargetLock.luau - Motor de Auto-Aim con Workaround Administrativo de Acceso a PlayerGui
-    - Multi-Tier PlayerGui Inspector: Lee de forma segura PlayerGui (si está disponible/admin), Character Overheads y Atributos.
+    TargetLock.luau - Motor de Auto-Aim / Silent Aim con Filtrado Estricto de NPCs y Orientación Exclusiva al Atacar
+    - Multi-Tier PlayerGui Inspector: Lee de forma segura PlayerGui, Character Overheads y Atributos.
     - SafeZoneCheck y PvPDisabledCheck automáticos, seguros y libres de errores.
+    - Filtrado Estricto de NPCs: Excluye al 100% NPCs de misiones, tiendas, barcos y diálogos; solo targetea enemigos reales.
+    - Orientación Silenciosa: El personaje se mueve 100% natural y SOLO mira hacia el objetivo al atacar o castear habilidades.
     - PlayerHighlight: Resaltado Rojo Puro.
-    - Metamethods seguros con checkcaller() y compatibilidad con hookmetamethod.
-    - ReplicatedStorage.Mouse hook y orientación de personaje para impacto 100%.
+    - Metamethods seguros con checkcaller() y ReplicatedStorage.Mouse.
 --]]
 
 local Services = {
     Players = game:GetService("Players"),
     RunService = game:GetService("RunService"),
     Workspace = game:GetService("Workspace"),
-    ReplicatedStorage = game:GetService("ReplicatedStorage")
+    ReplicatedStorage = game:GetService("ReplicatedStorage"),
+    UserInputService = game:GetService("UserInputService")
 }
 
 local LocalPlayer = Services.Players.LocalPlayer
@@ -33,11 +35,43 @@ local TargetLock = {
     Hooked = false
 }
 
+-- Estado de Ataque para Orientación Silenciosa (Solo mira al atacar/usar habilidad)
+local isAttacking = false
+local attackEndTime = 0
+
+local function TriggerAttackSnap(duration)
+    attackEndTime = tick() + (duration or 0.25)
+end
+
+-- Listener para clicks, taps móviles y teclas de habilidades
+Services.UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        isAttacking = true
+        TriggerAttackSnap(0.20)
+    end
+    if input.KeyCode == Enum.KeyCode.Z or input.KeyCode == Enum.KeyCode.X 
+        or input.KeyCode == Enum.KeyCode.C or input.KeyCode == Enum.KeyCode.V 
+        or input.KeyCode == Enum.KeyCode.F then
+        isAttacking = true
+        TriggerAttackSnap(0.35)
+    end
+end)
+
+Services.UserInputService.InputEnded:Connect(function(input, gameProcessed)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        isAttacking = false
+    end
+    if input.KeyCode == Enum.KeyCode.Z or input.KeyCode == Enum.KeyCode.X 
+        or input.KeyCode == Enum.KeyCode.C or input.KeyCode == Enum.KeyCode.V 
+        or input.KeyCode == Enum.KeyCode.F then
+        isAttacking = false
+    end
+end)
+
 --------------------------------------------------------------------------------
 -- 1. WORKAROUND ADMINISTRATIVO DE ACCESO A PLAYERGUI & DATOS DE JUGADORES
 --------------------------------------------------------------------------------
 
--- Intenta obtener el PlayerGui de cualquier jugador de forma segura y tolerante a fallos
 function TargetLock:GetPlayerGui(targetPlayer)
     if not targetPlayer or not targetPlayer:IsA("Player") then return nil end
     if targetPlayer == LocalPlayer then
@@ -51,33 +85,38 @@ function TargetLock:GetPlayerGui(targetPlayer)
     return pgui
 end
 
--- Determina el estado PvP inspeccionando PlayerGui, Overheads y Atributos de red
 local function IsPvPDisabled(targetPlayer)
     if not targetPlayer or not targetPlayer:IsA("Player") then return false end
     
     -- Tier 1: Comprobación de Atributos de Red
     local okAttr, attrDisabled = pcall(function()
         return targetPlayer:GetAttribute("PvpDisabled") == true
+            or targetPlayer:GetAttribute("PVPDisabled") == true
+            or targetPlayer:GetAttribute("SafeZone") == true
+            or targetPlayer:GetAttribute("InSafeZone") == true
     end)
     if okAttr and attrDisabled then return true end
 
-    -- Tier 2: Acceso Seguro a PlayerGui (Admin Workaround)
+    -- Tier 2: Acceso Seguro a PlayerGui
     local okGui, guiDisabled = pcall(function()
-        local pgui = targetPlayer:FindFirstChild("PlayerGui")
-        if pgui then
-            local main = pgui:FindFirstChild("Main")
-            if main then
-                local dis = main:FindFirstChild("PvpDisabled")
-                if dis and dis.Visible then return true end
-                
-                local pvp = main:FindFirstChild("Pvp")
-                if pvp then
-                    local frame = pvp:FindFirstChild("Frame")
-                    local btn = frame and (frame:FindFirstChild("PvpButton") or frame:FindFirstChildOfClass("TextButton"))
-                    if btn and btn:IsA("TextButton") then
-                        local txt = tostring(btn.Text or ""):upper()
-                        if txt:find("OFF") then return true end
-                        if txt:find("ON") then return false end
+        local pgui = TargetLock:GetPlayerGui(targetPlayer)
+        if not pgui then return false end
+
+        local main = pgui:FindFirstChild("Main") or pgui:FindFirstChild("MainGui")
+        if main then
+            local dis = main:FindFirstChild("PvpDisabled") or main:FindFirstChild("SafeZone")
+            if dis and dis:IsA("GuiObject") and dis.Visible then
+                return true
+            end
+            
+            local pvp = main:FindFirstChild("Pvp")
+            if pvp then
+                local frame = pvp:FindFirstChild("Frame") or pvp
+                local btn = frame:FindFirstChild("PvpButton") or frame:FindFirstChildOfClass("TextButton")
+                if btn and btn:IsA("TextButton") then
+                    local txt = tostring(btn.Text or ""):upper()
+                    if txt:find("OFF") or txt:find("DESACTIVADO") or txt:find("DISABLED") then
+                        return true
                     end
                 end
             end
@@ -86,7 +125,7 @@ local function IsPvPDisabled(targetPlayer)
     end)
     if okGui and guiDisabled then return true end
 
-    -- Tier 3: Comprobación de Overheads / Billboards en el Personaje (Head)
+    -- Tier 3: Comprobación de Overheads / Billboards en el Personaje
     local okHead, headDisabled = pcall(function()
         local char = targetPlayer.Character
         local head = char and char:FindFirstChild("Head")
@@ -151,12 +190,50 @@ local function IsInSafeZone(targetChar)
     return ok and inZone == true
 end
 
-local function IsValidNPC(model)
+-- Validación Estricta de Enemigos de Combate (Excluye 100% misiones, tiendas y diálogos)
+local function IsValidCombatNPC(model)
     if not model or not model:IsA("Model") then return false end
     if Services.Players:GetPlayerFromCharacter(model) then return false end
+
     local hum = model:FindFirstChildOfClass("Humanoid")
     local root = model:FindFirstChild("HumanoidRootPart") or model:FindFirstChild("Torso") or model.PrimaryPart
-    return (hum and root and hum.Health > 0)
+    if not hum or not root or hum.Health <= 0 then return false end
+
+    -- Excluir si está en zona segura
+    if IsInSafeZone(model) then return false end
+
+    -- Palabras clave de NPCs de misión, tienda y utilidades a excluir
+    local blacklistKeywords = {
+        "quest", "dealer", "shop", "seller", "giver", "spawn", "boat", "fruit", "sword",
+        "gun", "ship", "talk", "dialogue", "manager", "bartender", "alchemist", "teacher",
+        "trainer", "mentor", "scientist", "recruiter", "elite hunter", "nerd", "tort",
+        "citizen", "customer", "butler", "arowe", "blank", "enchants", "cousin", "blacksmith"
+    }
+
+    local nameLower = model.Name:lower()
+    for _, kw in ipairs(blacklistKeywords) do
+        if nameLower:find(kw) then return false end
+    end
+
+    -- Comprobar si tiene diálogos interactivos o carteles de misiones/tiendas
+    local head = model:FindFirstChild("Head")
+    if head then
+        for _, child in ipairs(head:GetChildren()) do
+            if child:IsA("BillboardGui") or child:IsA("SurfaceGui") or child:IsA("Dialog") then
+                local txt = ""
+                for _, desc in ipairs(child:GetDescendants()) do
+                    if desc:IsA("TextLabel") or desc:IsA("TextButton") then
+                        txt = txt .. " " .. tostring(desc.Text or ""):lower()
+                    end
+                end
+                for _, kw in ipairs(blacklistKeywords) do
+                    if txt:find(kw) then return false end
+                end
+            end
+        end
+    end
+
+    return true
 end
 
 --------------------------------------------------------------------------------
@@ -169,35 +246,48 @@ function TargetLock:GetValidTargets()
 
     -- 1. Jugadores (Con filtro SafeZone & PvP Multi-Tier)
     if self.TargetPlayers then
-        for _, player in ipairs(Services.Players:GetPlayers()) do
-            if player ~= LocalPlayer and player.Character then
-                if not IsPvPDisabled(player) and not IsInSafeZone(player.Character) then
-                    local root = player.Character:FindFirstChild("HumanoidRootPart")
-                    local hum = player.Character:FindFirstChildOfClass("Humanoid")
+        for _, p in ipairs(Services.Players:GetPlayers()) do
+            if p ~= LocalPlayer and p.Character then
+                if not IsPvPDisabled(p) and not IsInSafeZone(p.Character) then
+                    local root = p.Character:FindFirstChild("HumanoidRootPart")
+                    local hum = p.Character:FindFirstChildOfClass("Humanoid")
                     if root and hum and hum.Health > 0 then
-                        table.insert(targets, { Instance = player, Character = player.Character, Root = root, IsPlayer = true })
+                        table.insert(targets, { Instance = p, Character = p.Character, Root = root, IsPlayer = true })
                     end
                 end
             end
         end
     end
 
-    -- 2. NPCs / Mobs (Búsqueda acotada y optimizada)
+    -- 2. NPCs / Mobs de Combate (Excluye dadores de misiones y tiendas)
     if self.TargetNPCs then
-        local searchFolders = { Services.Workspace }
-        for _, folderName in ipairs({"Enemies", "NPCs", "Mobs", "Live", "Characters"}) do
-            local f = Services.Workspace:FindFirstChild(folderName)
-            if f then table.insert(searchFolders, f) end
-        end
-
         local checked = {}
-        for _, folder in ipairs(searchFolders) do
-            for _, obj in ipairs(folder:GetChildren()) do
+
+        -- Prioridad 1: Carpeta nativa Enemies
+        local enemiesFolder = Services.Workspace:FindFirstChild("Enemies")
+        if enemiesFolder then
+            for _, obj in ipairs(enemiesFolder:GetChildren()) do
                 if obj:IsA("Model") and obj ~= myChar and not checked[obj] then
                     checked[obj] = true
-                    if IsValidNPC(obj) and not IsInSafeZone(obj) then
+                    if IsValidCombatNPC(obj) then
                         local root = obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChild("Torso") or obj.PrimaryPart
                         table.insert(targets, { Instance = obj, Character = obj, Root = root, IsPlayer = false })
+                    end
+                end
+            end
+        end
+
+        -- Prioridad 2: Otras carpetas de entidades vivas
+        for _, folderName in ipairs({"Mobs", "Live", "Characters"}) do
+            local f = Services.Workspace:FindFirstChild(folderName)
+            if f and f ~= enemiesFolder then
+                for _, obj in ipairs(f:GetChildren()) do
+                    if obj:IsA("Model") and obj ~= myChar and not checked[obj] then
+                        checked[obj] = true
+                        if IsValidCombatNPC(obj) then
+                            local root = obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChild("Torso") or obj.PrimaryPart
+                            table.insert(targets, { Instance = obj, Character = obj, Root = root, IsPlayer = false })
+                        end
                     end
                 end
             end
@@ -330,7 +420,7 @@ end
 --------------------------------------------------------------------------------
 
 task.spawn(function()
-    while task.wait(0.15) do
+    while task.wait(0.12) do
         if TargetLock.Enabled then
             pcall(function()
                 if TargetLock.TargetMode == "NearestDistance" then
@@ -341,6 +431,7 @@ task.spawn(function()
                 TargetLock:UpdatePlayerHighlight()
             end)
         else
+            TargetLock.CurrentTarget = nil
             if TargetLock.HighlightInstance then
                 pcall(function() TargetLock.HighlightInstance:Destroy() end)
                 TargetLock.HighlightInstance = nil
@@ -349,9 +440,10 @@ task.spawn(function()
     end
 end)
 
--- Orientación horizontal del personaje para dirigir ataques Melee, Espadas y Frutas
+-- Orientación horizontal SILENCIOSA: El personaje SOLO mira al objetivo cuando está atacando o usando habilidades
 Services.RunService.RenderStepped:Connect(function()
-    if TargetLock.Enabled and TargetLock.CurrentTarget then
+    local attacking = isAttacking or (tick() < attackEndTime)
+    if TargetLock.Enabled and TargetLock.CurrentTarget and attacking then
         local targetPos = TargetLock:GetTargetPosition()
         local myChar = LocalPlayer.Character
         local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
@@ -378,46 +470,104 @@ function TargetLock:HookAll()
                 if mmt then setreadonly(mmt, false) else mmt = {}; setmetatable(MouseModule, mmt) end
                 rawset(MouseModule, "Hit", nil); rawset(MouseModule, "Target", nil)
                 
-                mmt.__index = function(selfTable, key)
-                    if key == "Hit" then
+                mmt.__index = function(tbl, key)
+                    if key == "Hit" or key == "hit" then
                         if TargetLock.Enabled and TargetLock.CurrentTarget then
                             local tPos = TargetLock:GetTargetPosition()
                             if tPos then return CFrame.new(tPos) end
                         end
                         return realStore.Hit
-                    elseif key == "Target" then
+                    elseif key == "Target" or key == "target" then
                         if TargetLock.Enabled and TargetLock.CurrentTarget then
                             local tPart = GetTargetAimPart(TargetLock.CurrentTarget, TargetLock.TargetPart)
                             if tPart then return tPart end
                         end
                         return realStore.Target
                     end
+                    return rawget(tbl, key)
                 end
-                mmt.__newindex = function(selfTable, key, value)
-                    if key == "Hit" or key == "Target" then realStore[key] = value else rawset(selfTable, key, value) end
+
+                mmt.__newindex = function(tbl, key, value)
+                    if key == "Hit" or key == "Target" or key == "hit" or key == "target" then
+                        realStore[key] = value
+                    else
+                        rawset(tbl, key, value)
+                    end
                 end
                 setreadonly(mmt, true)
             end
         end
     end)
 
-    -- 2. Hook global seguro de Mouse.__index con checkcaller()
+    -- 2. Hook Global con hookmetamethod y getrawmetatable
     pcall(function()
         if hookmetamethod then
             local oldIndex = nil
             oldIndex = hookmetamethod(game, "__index", newcclosure(function(selfInstance, key)
                 if not checkcaller() and selfInstance == Mouse and (key == "Hit" or key == "hit" or key == "Target" or key == "target") then
                     if TargetLock.Enabled and TargetLock.CurrentTarget then
-                        if key == "Hit" or key == "hit" then
-                            local targetPos = TargetLock:GetTargetPosition()
-                            if targetPos then return CFrame.new(targetPos) end
-                        elseif key == "Target" or key == "target" then
-                            local targetPart = GetTargetAimPart(TargetLock.CurrentTarget, TargetLock.TargetPart)
-                            if targetPart then return targetPart end
+                        local tPos = TargetLock:GetTargetPosition()
+                        if tPos then
+                            if key == "Hit" or key == "hit" then return CFrame.new(tPos) end
+                            if key == "Target" or key == "target" then
+                                local tPart = GetTargetAimPart(TargetLock.CurrentTarget, TargetLock.TargetPart)
+                                if tPart then return tPart end
+                            end
                         end
                     end
                 end
                 return oldIndex(selfInstance, key)
+            end))
+
+            local oldNamecall = nil
+            oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(selfInstance, ...)
+                local args = {...}
+                local ncm = getnamecallmethod and getnamecallmethod()
+                local method = ncm and tostring(ncm):lower() or ""
+
+                if not checkcaller() then
+                    if TargetLock.Enabled and TargetLock.CurrentTarget then
+                        local tPos = TargetLock:GetTargetPosition()
+                        local targetChar = GetTargetCharacter(TargetLock.CurrentTarget)
+                        local targetPart = GetTargetAimPart(TargetLock.CurrentTarget, TargetLock.TargetPart)
+
+                        if (method == "fireserver" or method == "invokeserver") and tPos then
+                            -- Activar snap de ataque momentáneo al disparar cualquier remote de combate
+                            TriggerAttackSnap(0.25)
+
+                            if selfInstance.Name == "RE/RegisterHit" or selfInstance.Name == "RegisterHit" or selfInstance.Name:find("RegisterHit") then
+                                if targetPart and targetChar then
+                                    args[1] = targetPart
+                                    args[2] = { { targetChar, targetPart } }
+                                    return oldNamecall(selfInstance, unpack(args))
+                                end
+                            end
+
+                            if selfInstance.Name == "RE/ShootGunEvent" or selfInstance.Name == "ShootGunEvent" or selfInstance.Name:find("ShootGunEvent") then
+                                args[1] = tPos
+                                if targetChar then
+                                    args[2] = { targetChar }
+                                end
+                                return oldNamecall(selfInstance, unpack(args))
+                            end
+                        elseif (method == "raycast" or method == "findpartonray" or method == "findpartonraywithignorelist" or method == "findpartonraywithwhitelist") and tPos then
+                            TriggerAttackSnap(0.20)
+                            if method == "raycast" then
+                                return {
+                                    Instance = targetPart,
+                                    Position = tPos,
+                                    Hit = tPos,
+                                    Normal = Vector3.new(0, 1, 0),
+                                    Material = Enum.Material.SmoothPlastic
+                                }
+                            else
+                                return targetPart, tPos, Vector3.new(0, 1, 0), Enum.Material.SmoothPlastic
+                            end
+                        end
+                    end
+                end
+
+                return oldNamecall(selfInstance, ...)
             end))
         else
             local gmt = getrawmetatable(game)
@@ -427,21 +577,24 @@ function TargetLock:HookAll()
             gmt.__index = newcclosure(function(selfInstance, key)
                 if not checkcaller() and selfInstance == Mouse and (key == "Hit" or key == "hit" or key == "Target" or key == "target") then
                     if TargetLock.Enabled and TargetLock.CurrentTarget then
-                        if key == "Hit" or key == "hit" then
-                            local targetPos = TargetLock:GetTargetPosition()
-                            if targetPos then return CFrame.new(targetPos) end
-                        elseif key == "Target" or key == "target" then
-                            local targetPart = GetTargetAimPart(TargetLock.CurrentTarget, TargetLock.TargetPart)
-                            if targetPart then return targetPart end
+                        local tPos = TargetLock:GetTargetPosition()
+                        if tPos then
+                            if key == "Hit" or key == "hit" then return CFrame.new(tPos) end
+                            if key == "Target" or key == "target" then
+                                local tPart = GetTargetAimPart(TargetLock.CurrentTarget, TargetLock.TargetPart)
+                                if tPart then return tPart end
+                            end
                         end
                     end
                 end
                 return oldIndex(selfInstance, key)
             end)
-
             if setreadonly then setreadonly(gmt, true) end
         end
     end)
 end
+
+-- Activar hooks
+TargetLock:HookAll()
 
 return TargetLock
