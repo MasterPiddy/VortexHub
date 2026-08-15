@@ -1133,10 +1133,10 @@ function VortexHub:BuildUI()
 
     MakeDraggable(toggleBtn)
 
-    -- Main Hub Window
+    -- Main Hub Window (20% narrower width: 0.64, 10% taller height: 0.96)
     local mainFrame = Instance.new("Frame")
     mainFrame.Name = "VortexMainFrame"
-    mainFrame.Size = UDim2.new(0.80, 0, 0.88, 0)
+    mainFrame.Size = UDim2.new(0.64, 0, 0.96, 0)
     mainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
     mainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
     mainFrame.BackgroundColor3 = Color3.fromRGB(15, 16, 22)
@@ -1160,7 +1160,7 @@ function VortexHub:BuildUI()
 
     -- Header Bar
     local header = Instance.new("Frame")
-    header.Size = UDim2.new(1, 0, 0, 44)
+    header.Size = UDim2.new(1, 0, 0, 42)
     header.Position = UDim2.new(0, 0, 0, 0)
     header.BackgroundColor3 = Color3.fromRGB(20, 22, 30)
     header.Parent = mainFrame
@@ -1171,8 +1171,8 @@ function VortexHub:BuildUI()
 
     -- Título Centrado VORTEXHUB
     local titleContainer = Instance.new("Frame")
-    titleContainer.Size = UDim2.new(0, 260, 0, 36)
-    titleContainer.Position = UDim2.new(0.5, 0, 0.5, 0)
+    titleContainer.Size = UDim2.new(0, 200, 0, 34)
+    titleContainer.Position = UDim2.new(0.36, 0, 0.5, 0)
     titleContainer.AnchorPoint = Vector2.new(0.5, 0.5)
     titleContainer.BackgroundTransparency = 1
     titleContainer.Parent = header
@@ -1184,7 +1184,7 @@ function VortexHub:BuildUI()
     titleText.RichText = true
     titleText.Text = "— <font color='#FFFFFF'><b>VORTEX</b></font><font color='#FF2438'><b>HUB</b></font> —"
     titleText.Font = Enum.Font.GothamBold
-    titleText.TextSize = 17
+    titleText.TextSize = 16
     titleText.TextColor3 = Color3.fromRGB(255, 255, 255)
     titleText.TextXAlignment = Enum.TextXAlignment.Center
     titleText:SetAttribute("IsHeaderTitle", true)
@@ -1193,8 +1193,8 @@ function VortexHub:BuildUI()
 
     -- Theme Presets
     local themeContainer = Instance.new("Frame")
-    themeContainer.Size = UDim2.new(0, 140, 0, 24)
-    themeContainer.Position = UDim2.new(1, -190, 0.5, -12)
+    themeContainer.Size = UDim2.new(0, 110, 0, 22)
+    themeContainer.Position = UDim2.new(1, -150, 0.5, -11)
     themeContainer.BackgroundTransparency = 1
     themeContainer.Parent = header
 
@@ -1202,12 +1202,12 @@ function VortexHub:BuildUI()
     themeLayout.FillDirection = Enum.FillDirection.Horizontal
     themeLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
     themeLayout.VerticalAlignment = Enum.VerticalAlignment.Center
-    themeLayout.Padding = UDim.new(0, 6)
+    themeLayout.Padding = UDim.new(0, 4)
     themeLayout.Parent = themeContainer
 
     for themeName, color in pairs(self.Themes) do
         local dot = Instance.new("TextButton")
-        dot.Size = UDim2.new(0, 16, 0, 16)
+        dot.Size = UDim2.new(0, 14, 0, 14)
         dot.BackgroundColor3 = color
         dot.Text = ""
         dot.Parent = themeContainer
@@ -1223,8 +1223,8 @@ function VortexHub:BuildUI()
 
     -- Close Button (Chamfered Red X)
     local closeBtn = Instance.new("ImageButton")
-    closeBtn.Size = UDim2.new(0, 28, 0, 28)
-    closeBtn.Position = UDim2.new(1, -36, 0.5, -14)
+    closeBtn.Size = UDim2.new(0, 26, 0, 26)
+    closeBtn.Position = UDim2.new(1, -34, 0.5, -13)
     closeBtn.BackgroundTransparency = 1
     closeBtn.Image = btnAsset
     closeBtn.ScaleType = Enum.ScaleType.Slice
@@ -1238,7 +1238,7 @@ function VortexHub:BuildUI()
     closeLabel.Text = "X"
     closeLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
     closeLabel.Font = Enum.Font.GothamBold
-    closeLabel.TextSize = 13
+    closeLabel.TextSize = 12.5
     closeLabel.Parent = closeBtn
 
     closeBtn.MouseButton1Click:Connect(function()
@@ -1247,15 +1247,15 @@ function VortexHub:BuildUI()
 
     -- Body Container (Below Header)
     local body = Instance.new("Frame")
-    body.Size = UDim2.new(1, 0, 1, -44)
-    body.Position = UDim2.new(0, 0, 0, 44)
+    body.Size = UDim2.new(1, 0, 1, -42)
+    body.Position = UDim2.new(0, 0, 0, 42)
     body.BackgroundTransparency = 1
     body.Parent = mainFrame
 
     -- Left Sidebar (Tabs Container)
     local sidebar = Instance.new("Frame")
-    sidebar.Size = UDim2.new(0.24, 0, 1, -16)
-    sidebar.Position = UDim2.new(0, 8, 0, 8)
+    sidebar.Size = UDim2.new(0.27, 0, 1, -14)
+    sidebar.Position = UDim2.new(0, 7, 0, 7)
     sidebar.BackgroundColor3 = Color3.fromRGB(18, 19, 26)
     sidebar.Parent = body
 
@@ -1270,8 +1270,8 @@ function VortexHub:BuildUI()
 
     -- Right Content Sub-Window (Recessed Cyber Plate)
     local contentArea = Instance.new("Frame")
-    contentArea.Size = UDim2.new(0.73, 0, 1, -16)
-    contentArea.Position = UDim2.new(0.255, 0, 0, 8)
+    contentArea.Size = UDim2.new(0.70, 0, 1, -14)
+    contentArea.Position = UDim2.new(0.285, 0, 0, 7)
     contentArea.BackgroundColor3 = Color3.fromRGB(12, 13, 18)
     contentArea.ClipsDescendants = true
     contentArea.Parent = body
@@ -1288,8 +1288,8 @@ function VortexHub:BuildUI()
 
     -- Active Selected Tab with Pointer Arrow Pointing Right into Content Window
     local combatTabBtn = Instance.new("ImageButton")
-    combatTabBtn.Size = UDim2.new(1, 12, 0, 46) -- Extends 12px right to seamlessly point into the content window
-    combatTabBtn.Position = UDim2.new(0, 4, 0, 10)
+    combatTabBtn.Size = UDim2.new(1, 10, 0, 44) -- Extends 10px right to seamlessly point into the content window
+    combatTabBtn.Position = UDim2.new(0, 3, 0, 10)
     combatTabBtn.BackgroundTransparency = 1
     combatTabBtn.Image = tabActiveAsset
     combatTabBtn.ScaleType = Enum.ScaleType.Slice
@@ -1301,12 +1301,12 @@ function VortexHub:BuildUI()
     table.insert(self.ThemeElements, combatTabBtn)
 
     local combatTabLabel = Instance.new("TextLabel")
-    combatTabLabel.Size = UDim2.new(1, -22, 1, 0)
-    combatTabLabel.Position = UDim2.new(0, 10, 0, 0)
+    combatTabLabel.Size = UDim2.new(1, -20, 1, 0)
+    combatTabLabel.Position = UDim2.new(0, 8, 0, 0)
     combatTabLabel.BackgroundTransparency = 1
     combatTabLabel.Text = "⚔️  COMBAT"
     combatTabLabel.Font = Enum.Font.GothamBold
-    combatTabLabel.TextSize = 13.5
+    combatTabLabel.TextSize = 12.5
     combatTabLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
     combatTabLabel.TextXAlignment = Enum.TextXAlignment.Left
     combatTabLabel.ZIndex = 6
