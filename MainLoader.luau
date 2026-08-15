@@ -691,7 +691,10 @@ function VortexHub:SetAccentColor(color)
     for _, item in ipairs(self.ThemeElements) do
         if item and item.Parent then
             if item:IsA("UIStroke") then
-                item.Color = color
+                local isAccent = item:GetAttribute("IsThemeAccent")
+                if isAccent == nil or isAccent == true then
+                    item.Color = color
+                end
             elseif item:IsA("ImageLabel") or item:IsA("ImageButton") then
                 if item:GetAttribute("IsThemeAccent") then
                     item.ImageColor3 = color
@@ -1236,8 +1239,6 @@ function VortexHub:BuildUI()
 
     local logoUrl = "https://raw.githubusercontent.com/MasterPiddy/VortexHub/main/assets/vortex_logo.png"
     local logoAssetId = GetCyberAsset("vortex_logo_v3.png", logoUrl)
-
-    local tabActiveAsset = GetCyberAsset("cyber_tab_active_v2.png", "https://raw.githubusercontent.com/MasterPiddy/VortexHub/main/assets/cyber_tab_active.png")
     local btnAsset = GetCyberAsset("cyber_button_v2.png", "https://raw.githubusercontent.com/MasterPiddy/VortexHub/main/assets/cyber_button.png")
 
     -- Draggable Floating Button
@@ -1296,7 +1297,7 @@ function VortexHub:BuildUI()
 
     MakeDraggable(toggleBtn)
 
-    -- Main Hub Window (20% narrower width: 0.64, 10% taller height: 0.96)
+    -- Main Hub Window
     local mainFrame = Instance.new("Frame")
     mainFrame.Name = "VortexMainFrame"
     mainFrame.Size = UDim2.new(0.64, 0, 0.96, 0)
@@ -1354,7 +1355,7 @@ function VortexHub:BuildUI()
     titleText.Parent = titleContainer
     table.insert(self.ThemeElements, titleText)
 
-    -- Hide / Minimize Button (Disappear floating button + close GUI, background features keep running)
+    -- Hide / Minimize Button
     local hideBtn = Instance.new("ImageButton")
     hideBtn.Size = UDim2.new(0, 26, 0, 26)
     hideBtn.Position = UDim2.new(1, -66, 0.5, -13)
@@ -1403,14 +1404,14 @@ function VortexHub:BuildUI()
         mainFrame.Visible = false
     end)
 
-    -- Body Container (Below Header)
+    -- Body Container
     local body = Instance.new("Frame")
     body.Size = UDim2.new(1, 0, 1, -42)
     body.Position = UDim2.new(0, 0, 0, 42)
     body.BackgroundTransparency = 1
     body.Parent = mainFrame
 
-    -- Left Sidebar (Tabs Container)
+    -- Left Sidebar
     local sidebar = Instance.new("Frame")
     sidebar.Size = UDim2.new(0.27, 0, 1, -14)
     sidebar.Position = UDim2.new(0, 7, 0, 7)
@@ -1426,21 +1427,12 @@ function VortexHub:BuildUI()
     sidebarStroke.Color = Color3.fromRGB(36, 38, 50)
     sidebarStroke.Parent = sidebar
 
-    local sideLayout = Instance.new("UIListLayout")
-    sideLayout.Padding = UDim.new(0, 8)
-    sideLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-    sideLayout.Parent = sidebar
-
-    local sidePad = Instance.new("UIPadding")
-    sidePad.PaddingTop = UDim.new(0, 10)
-    sidePad.Parent = sidebar
-
     -- Right Content Sub-Window (Recessed Cyber Plate)
     local contentArea = Instance.new("Frame")
     contentArea.Size = UDim2.new(0.70, 0, 1, -14)
     contentArea.Position = UDim2.new(0.285, 0, 0, 7)
     contentArea.BackgroundColor3 = Color3.fromRGB(12, 13, 18)
-    contentArea.ClipsDescendants = true
+    contentArea.ClipsDescendants = false
     contentArea.Parent = body
 
     local contentCorner = Instance.new("UICorner")
@@ -1448,26 +1440,42 @@ function VortexHub:BuildUI()
     contentCorner.Parent = contentArea
 
     local contentStroke = Instance.new("UIStroke")
-    contentStroke.Thickness = 1.6
+    contentStroke.Thickness = 1.8
     contentStroke.Color = self.AccentColor
     contentStroke.Parent = contentArea
     table.insert(self.ThemeElements, contentStroke)
 
-    -- Tab 1: Combat Button
-    local combatTabBtn = Instance.new("ImageButton")
-    combatTabBtn.Size = UDim2.new(0.96, 6, 0, 42)
-    combatTabBtn.BackgroundTransparency = 1
-    combatTabBtn.Image = tabActiveAsset
-    combatTabBtn.ScaleType = Enum.ScaleType.Slice
-    combatTabBtn.SliceCenter = Rect.new(26, 24, 132, 40)
-    combatTabBtn.ImageColor3 = self.AccentColor
-    combatTabBtn:SetAttribute("IsThemeAccent", true)
+    -- Tab 1: Combat Frame
+    local combatTabBtn = Instance.new("TextButton")
+    combatTabBtn.Size = UDim2.new(1, 6, 0, 42)
+    combatTabBtn.Position = UDim2.new(0, 3, 0, 8)
+    combatTabBtn.BackgroundColor3 = Color3.fromRGB(12, 13, 18)
+    combatTabBtn.Text = ""
+    combatTabBtn.AutoButtonColor = false
     combatTabBtn.ZIndex = 5
     combatTabBtn.Parent = sidebar
-    table.insert(self.ThemeElements, combatTabBtn)
+
+    local combatCorner = Instance.new("UICorner")
+    combatCorner.CornerRadius = UDim.new(0, 6)
+    combatCorner.Parent = combatTabBtn
+
+    local combatStroke = Instance.new("UIStroke")
+    combatStroke.Thickness = 1.8
+    combatStroke.Color = self.AccentColor
+    combatStroke:SetAttribute("IsThemeAccent", true)
+    combatStroke.Parent = combatTabBtn
+    table.insert(self.ThemeElements, combatStroke)
+
+    local combatSeamMask = Instance.new("Frame")
+    combatSeamMask.Size = UDim2.new(0, 8, 1, -4)
+    combatSeamMask.Position = UDim2.new(1, -4, 0, 2)
+    combatSeamMask.BackgroundColor3 = Color3.fromRGB(12, 13, 18)
+    combatSeamMask.BorderSizePixel = 0
+    combatSeamMask.ZIndex = 12
+    combatSeamMask.Parent = combatTabBtn
 
     local combatTabLabel = Instance.new("TextLabel")
-    combatTabLabel.Size = UDim2.new(1, -16, 1, 0)
+    combatTabLabel.Size = UDim2.new(1, -12, 1, 0)
     combatTabLabel.Position = UDim2.new(0, 8, 0, 0)
     combatTabLabel.BackgroundTransparency = 1
     combatTabLabel.Text = "⚔️  COMBAT"
@@ -1475,25 +1483,41 @@ function VortexHub:BuildUI()
     combatTabLabel.TextSize = 12
     combatTabLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
     combatTabLabel.TextXAlignment = Enum.TextXAlignment.Left
-    combatTabLabel.ZIndex = 6
+    combatTabLabel.ZIndex = 14
     combatTabLabel.Parent = combatTabBtn
 
-    -- Tab 2: Appearance Button
-    local appearanceTabBtn = Instance.new("ImageButton")
-    appearanceTabBtn.Size = UDim2.new(0.96, 6, 0, 42)
-    appearanceTabBtn.BackgroundTransparency = 0.3
+    -- Tab 2: Appearance Frame
+    local appearanceTabBtn = Instance.new("TextButton")
+    appearanceTabBtn.Size = UDim2.new(1, -6, 0, 40)
+    appearanceTabBtn.Position = UDim2.new(0, 3, 0, 56)
     appearanceTabBtn.BackgroundColor3 = Color3.fromRGB(22, 24, 34)
-    appearanceTabBtn.Image = ""
-    appearanceTabBtn.ScaleType = Enum.ScaleType.Slice
-    appearanceTabBtn.SliceCenter = Rect.new(26, 24, 132, 40)
-    appearanceTabBtn.ImageColor3 = self.AccentColor
-    appearanceTabBtn:SetAttribute("IsThemeAccent", false)
+    appearanceTabBtn.Text = ""
+    appearanceTabBtn.AutoButtonColor = false
     appearanceTabBtn.ZIndex = 2
     appearanceTabBtn.Parent = sidebar
-    Instance.new("UICorner", appearanceTabBtn).CornerRadius = UDim.new(0, 8)
+
+    local appearCorner = Instance.new("UICorner")
+    appearCorner.CornerRadius = UDim.new(0, 6)
+    appearCorner.Parent = appearanceTabBtn
+
+    local appearStroke = Instance.new("UIStroke")
+    appearStroke.Thickness = 1
+    appearStroke.Color = Color3.fromRGB(40, 44, 58)
+    appearStroke:SetAttribute("IsThemeAccent", false)
+    appearStroke.Parent = appearanceTabBtn
+    table.insert(self.ThemeElements, appearStroke)
+
+    local appearSeamMask = Instance.new("Frame")
+    appearSeamMask.Size = UDim2.new(0, 8, 1, -4)
+    appearSeamMask.Position = UDim2.new(1, -4, 0, 2)
+    appearSeamMask.BackgroundColor3 = Color3.fromRGB(12, 13, 18)
+    appearSeamMask.BorderSizePixel = 0
+    appearSeamMask.Visible = false
+    appearSeamMask.ZIndex = 12
+    appearSeamMask.Parent = appearanceTabBtn
 
     local appearanceTabLabel = Instance.new("TextLabel")
-    appearanceTabLabel.Size = UDim2.new(1, -16, 1, 0)
+    appearanceTabLabel.Size = UDim2.new(1, -12, 1, 0)
     appearanceTabLabel.Position = UDim2.new(0, 8, 0, 0)
     appearanceTabLabel.BackgroundTransparency = 1
     appearanceTabLabel.Text = "🎨  APPEAR"
@@ -1504,38 +1528,48 @@ function VortexHub:BuildUI()
     appearanceTabLabel.ZIndex = 6
     appearanceTabLabel.Parent = appearanceTabBtn
 
-    local currentTab = "Combat"
     local function SwitchTab(tabName)
-        currentTab = tabName
         if tabName == "Combat" then
-            combatTabBtn.Image = tabActiveAsset
-            combatTabBtn.BackgroundTransparency = 1
-            combatTabBtn.ImageColor3 = self.AccentColor
-            combatTabBtn:SetAttribute("IsThemeAccent", true)
+            -- Set Combat as Merged Active Tab
+            combatTabBtn.Size = UDim2.new(1, 6, 0, 42)
+            combatTabBtn.BackgroundColor3 = Color3.fromRGB(12, 13, 18)
             combatTabBtn.ZIndex = 5
+            combatStroke.Thickness = 1.8
+            combatStroke.Color = self.AccentColor
+            combatStroke:SetAttribute("IsThemeAccent", true)
+            combatSeamMask.Visible = true
             combatTabLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 
-            appearanceTabBtn.Image = ""
-            appearanceTabBtn.BackgroundTransparency = 0.3
+            -- Set Appearance as Inactive Tab
+            appearanceTabBtn.Size = UDim2.new(1, -6, 0, 40)
             appearanceTabBtn.BackgroundColor3 = Color3.fromRGB(22, 24, 34)
-            appearanceTabBtn:SetAttribute("IsThemeAccent", false)
             appearanceTabBtn.ZIndex = 2
+            appearStroke.Thickness = 1
+            appearStroke.Color = Color3.fromRGB(40, 44, 58)
+            appearStroke:SetAttribute("IsThemeAccent", false)
+            appearSeamMask.Visible = false
             appearanceTabLabel.TextColor3 = Color3.fromRGB(150, 155, 170)
 
             self:RenderCombatCategory(contentArea)
         else
-            appearanceTabBtn.Image = tabActiveAsset
-            appearanceTabBtn.BackgroundTransparency = 1
-            appearanceTabBtn.ImageColor3 = self.AccentColor
-            appearanceTabBtn:SetAttribute("IsThemeAccent", true)
+            -- Set Appearance as Merged Active Tab
+            appearanceTabBtn.Size = UDim2.new(1, 6, 0, 42)
+            appearanceTabBtn.BackgroundColor3 = Color3.fromRGB(12, 13, 18)
             appearanceTabBtn.ZIndex = 5
+            appearStroke.Thickness = 1.8
+            appearStroke.Color = self.AccentColor
+            appearStroke:SetAttribute("IsThemeAccent", true)
+            appearSeamMask.Visible = true
             appearanceTabLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 
-            combatTabBtn.Image = ""
-            combatTabBtn.BackgroundTransparency = 0.3
+            -- Set Combat as Inactive Tab
+            combatTabBtn.Size = UDim2.new(1, -6, 0, 40)
             combatTabBtn.BackgroundColor3 = Color3.fromRGB(22, 24, 34)
-            combatTabBtn:SetAttribute("IsThemeAccent", false)
             combatTabBtn.ZIndex = 2
+            combatStroke.Thickness = 1
+            combatStroke.Color = Color3.fromRGB(40, 44, 58)
+            combatStroke:SetAttribute("IsThemeAccent", false)
+            combatSeamMask.Visible = false
             combatTabLabel.TextColor3 = Color3.fromRGB(150, 155, 170)
 
             self:RenderAppearanceCategory(contentArea)
@@ -1560,7 +1594,7 @@ function VortexHub:BuildUI()
 
     MakeDraggable(mainFrame, header)
     self:RenderCombatCategory(contentArea)
-    print("[VortexHub] UI Cybernetica con Pestaña Appearance Montada.")
+    print("[VortexHub] UI Cybernetica con Pestaña Unificada Montada.")
 end
 
 --------------------------------------------------------------------------------
