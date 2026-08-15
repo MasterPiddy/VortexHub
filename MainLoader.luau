@@ -714,30 +714,18 @@ end
 local function MakeDraggable(guiObject, handleObject)
     handleObject = handleObject or guiObject
     local dragging = false
-    local dragInput, dragStart, startPos
+    local dragStart, startPos
 
     handleObject.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             dragging = true
             dragStart = input.Position
             startPos = guiObject.Position
-
-            input.Changed:Connect(function()
-                if input.UserInputState == Enum.UserInputState.End then
-                    dragging = false
-                end
-            end)
-        end
-    end)
-
-    guiObject.InputChanged:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-            dragInput = input
         end
     end)
 
     Services.UserInputService.InputChanged:Connect(function(input)
-        if input == dragInput and dragging then
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
             local delta = input.Position - dragStart
             guiObject.Position = UDim2.new(
                 startPos.X.Scale,
@@ -745,6 +733,12 @@ local function MakeDraggable(guiObject, handleObject)
                 startPos.Y.Scale,
                 startPos.Y.Offset + delta.Y
             )
+        end
+    end)
+
+    Services.UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = false
         end
     end)
 end
@@ -1237,9 +1231,11 @@ function VortexHub:BuildUI()
     screen.DisplayOrder = 9999
     screen.Parent = parentGui
 
-    local tabActiveAsset = GetCyberAsset("cyber_tab_active_v5.png", "https://raw.githubusercontent.com/MasterPiddy/VortexHub/main/assets/cyber_tab_active.png")
-    local tabInactiveAsset = GetCyberAsset("cyber_tab_inactive_v5.png", "https://raw.githubusercontent.com/MasterPiddy/VortexHub/main/assets/cyber_tab_inactive.png")
-    local btnAsset = GetCyberAsset("cyber_button_v2.png", "https://raw.githubusercontent.com/MasterPiddy/VortexHub/main/assets/cyber_button.png")
+    local logoUrl = "https://raw.githubusercontent.com/MasterPiddy/VortexHub/main/assets/vortex_logo.png"
+    local logoAssetId = GetCyberAsset("vortex_logo_v3.png", logoUrl) or logoUrl or ""
+    local tabActiveAsset = GetCyberAsset("cyber_tab_active_v5.png", "https://raw.githubusercontent.com/MasterPiddy/VortexHub/main/assets/cyber_tab_active.png") or ""
+    local tabInactiveAsset = GetCyberAsset("cyber_tab_inactive_v5.png", "https://raw.githubusercontent.com/MasterPiddy/VortexHub/main/assets/cyber_tab_inactive.png") or ""
+    local btnAsset = GetCyberAsset("cyber_button_v2.png", "https://raw.githubusercontent.com/MasterPiddy/VortexHub/main/assets/cyber_button.png") or ""
 
     -- Draggable Floating Button
     local toggleBtn = Instance.new("ImageButton")
@@ -1263,7 +1259,7 @@ function VortexHub:BuildUI()
     logoImg.Position = UDim2.new(0.5, 0, 0.5, 0)
     logoImg.AnchorPoint = Vector2.new(0.5, 0.5)
     logoImg.BackgroundTransparency = 1
-    logoImg.Image = logoAssetId or logoUrl
+    logoImg.Image = (logoAssetId ~= "" and logoAssetId) or logoUrl or ""
     logoImg.ScaleType = Enum.ScaleType.Fit
     logoImg.Parent = toggleBtn
 
@@ -1278,7 +1274,7 @@ function VortexHub:BuildUI()
     fallbackIcon.Text = "🌀"
     fallbackIcon.TextSize = 24
     fallbackIcon.TextColor3 = Color3.fromRGB(240, 200, 255)
-    fallbackIcon.Visible = (logoAssetId == nil and logoImg.Image == "")
+    fallbackIcon.Visible = (logoImg.Image == "")
     fallbackIcon.Parent = toggleBtn
 
     local btnStroke = Instance.new("UIStroke")
@@ -1318,8 +1314,18 @@ function VortexHub:BuildUI()
     mainStroke.Parent = mainFrame
     table.insert(self.ThemeElements, mainStroke)
 
-    toggleBtn.MouseButton1Click:Connect(function()
-        mainFrame.Visible = not mainFrame.Visible
+    local toggleClickTime = 0
+    toggleBtn.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            toggleClickTime = tick()
+        end
+    end)
+    toggleBtn.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            if tick() - toggleClickTime < 0.28 then
+                mainFrame.Visible = not mainFrame.Visible
+            end
+        end
     end)
 
     -- Header Bar
