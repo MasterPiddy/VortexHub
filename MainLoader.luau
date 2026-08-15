@@ -991,9 +991,9 @@ function VortexHub:BuildUI()
     pcall(function()
         if writefile and getcustomasset then
             local imageBytes = game:HttpGet(logoUrl)
-            writefile("vortex_logo_v2.png", imageBytes)
-            if isfile and isfile("vortex_logo_v2.png") then
-                logoAssetId = getcustomasset("vortex_logo_v2.png")
+            writefile("vortex_logo_v3.png", imageBytes)
+            if isfile and isfile("vortex_logo_v3.png") then
+                logoAssetId = getcustomasset("vortex_logo_v3.png")
             end
         end
     end)
@@ -1014,7 +1014,7 @@ function VortexHub:BuildUI()
 
     local logoImg = Instance.new("ImageLabel")
     logoImg.Name = "LogoImage"
-    logoImg.Size = UDim2.new(1, -2, 1, -2)
+    logoImg.Size = UDim2.new(1, 0, 1, 0)
     logoImg.Position = UDim2.new(0.5, 0, 0.5, 0)
     logoImg.AnchorPoint = Vector2.new(0.5, 0.5)
     logoImg.BackgroundTransparency = 1
