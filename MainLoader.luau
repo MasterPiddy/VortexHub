@@ -73,8 +73,9 @@ local VortexHub = {
     Themes = {
         Crimson = Color3.fromRGB(255, 36, 56),
         Cyan = Color3.fromRGB(0, 240, 255),
-        Purple = Color3.fromRGB(168, 85, 247),
+        Emerald = Color3.fromRGB(0, 255, 102),
         Green = Color3.fromRGB(0, 255, 102),
+        Purple = Color3.fromRGB(168, 85, 247),
         Amber = Color3.fromRGB(255, 179, 0)
     },
     
@@ -668,20 +669,25 @@ end
 local CyberAssetCache = {}
 local function GetCyberAsset(fileName, url)
     if CyberAssetCache[fileName] then return CyberAssetCache[fileName] end
-    local assetId = url
+    local assetId = url or ""
     pcall(function()
         if writefile and getcustomasset then
             if not isfile or not isfile(fileName) then
-                local content = game:HttpGet(url)
-                writefile(fileName, content)
+                local s, content = pcall(function() return game:HttpGet(url) end)
+                if s and content and not content:find("404: Not Found") and #content > 50 then
+                    writefile(fileName, content)
+                end
             end
             if isfile and isfile(fileName) then
-                assetId = getcustomasset(fileName)
+                local customId = getcustomasset(fileName)
+                if customId and customId ~= "" then
+                    assetId = customId
+                end
             end
         end
     end)
-    CyberAssetCache[fileName] = assetId
-    return assetId
+    CyberAssetCache[fileName] = assetId or url or ""
+    return CyberAssetCache[fileName]
 end
 
 function VortexHub:SetAccentColor(color)
@@ -1314,19 +1320,19 @@ function VortexHub:BuildUI()
     mainStroke.Parent = mainFrame
     table.insert(self.ThemeElements, mainStroke)
 
-    local toggleClickTime = 0
-    toggleBtn.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            toggleClickTime = tick()
+    local lastToggle = 0
+    local function ToggleMainFrame()
+        if tick() - lastToggle > 0.15 then
+            lastToggle = tick()
+            mainFrame.Visible = not mainFrame.Visible
         end
-    end)
-    toggleBtn.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            if tick() - toggleClickTime < 0.28 then
-                mainFrame.Visible = not mainFrame.Visible
-            end
-        end
-    end)
+    end
+
+    toggleBtn.MouseButton1Click:Connect(ToggleMainFrame)
+    if toggleBtn.TouchTap then
+        toggleBtn.TouchTap:Connect(ToggleMainFrame)
+    end
+    toggleBtn.Activated:Connect(ToggleMainFrame)
 
     -- Header Bar
     local header = Instance.new("Frame")
