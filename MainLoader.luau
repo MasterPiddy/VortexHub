@@ -67,13 +67,13 @@ local VortexHub = {
     -- Logo oficial Orbital V
     LogoAsset = "https://raw.githubusercontent.com/MasterPiddy/VortexHub/main/assets/vortex_logo.png",
 
-    -- UI State
-    AccentColor = Color3.fromRGB(138, 43, 226),
+    -- UI State (Crimson Flagship Theme)
+    AccentColor = Color3.fromRGB(255, 36, 56),
     ThemeElements = {},
     Themes = {
-        Purple = Color3.fromRGB(138, 43, 226),
+        Crimson = Color3.fromRGB(255, 36, 56),
         Cyan = Color3.fromRGB(0, 240, 255),
-        Crimson = Color3.fromRGB(255, 36, 0),
+        Purple = Color3.fromRGB(168, 85, 247),
         Green = Color3.fromRGB(0, 255, 102),
         Amber = Color3.fromRGB(255, 179, 0)
     },
@@ -667,6 +667,8 @@ end
 
 function VortexHub:SetAccentColor(color)
     self.AccentColor = color
+    local hexColor = string.format("#%02X%02X%02X", math.floor(color.R * 255), math.floor(color.G * 255), math.floor(color.B * 255))
+    
     for _, item in ipairs(self.ThemeElements) do
         if item and item.Parent then
             if item:IsA("UIStroke") then
@@ -674,6 +676,9 @@ function VortexHub:SetAccentColor(color)
             elseif item:IsA("TextLabel") or item:IsA("TextButton") then
                 if item:GetAttribute("IsThemeAccent") then
                     item.TextColor3 = color
+                end
+                if item:GetAttribute("IsHeaderTitle") then
+                    item.Text = "— <font color='#FFFFFF'><b>VORTEX</b></font><font color='" .. hexColor .. "'><b>HUB</b></font> —"
                 end
             end
         end
@@ -730,28 +735,33 @@ function VortexHub:RenderCombatCategory(contentArea)
     scroll.Parent = contentArea
 
     local listLayout = Instance.new("UIListLayout")
-    listLayout.Padding = UDim.new(0, 12)
+    listLayout.Padding = UDim.new(0, 14)
     listLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
     listLayout.Parent = scroll
 
     local padding = Instance.new("UIPadding")
-    padding.PaddingTop = UDim.new(0, 10)
-    padding.PaddingBottom = UDim.new(0, 10)
+    padding.PaddingTop = UDim.new(0, 12)
+    padding.PaddingBottom = UDim.new(0, 12)
     padding.Parent = scroll
 
-    -- 1. TARJETA CONTROL AUTO-AIM
+    -- 1. TARJETA PRINCIPAL AUTO-AIM (TARGET LOCK)
     local aimCard = Instance.new("Frame")
-    aimCard.Size = UDim2.new(0.95, 0, 0, 195)
-    aimCard.BackgroundColor3 = Color3.fromRGB(22, 18, 42)
+    aimCard.Size = UDim2.new(0.95, 0, 0, 85)
+    aimCard.BackgroundColor3 = Color3.fromRGB(22, 24, 34)
     aimCard.Parent = scroll
 
     local aimCorner = Instance.new("UICorner")
     aimCorner.CornerRadius = UDim.new(0, 10)
     aimCorner.Parent = aimCard
 
+    local aimStroke = Instance.new("UIStroke")
+    aimStroke.Thickness = 1.2
+    aimStroke.Color = Color3.fromRGB(48, 25, 36)
+    aimStroke.Parent = aimCard
+
     local aimTitle = Instance.new("TextLabel")
-    aimTitle.Size = UDim2.new(0.6, 0, 0, 30)
-    aimTitle.Position = UDim2.new(0, 12, 0, 8)
+    aimTitle.Size = UDim2.new(0.65, 0, 0, 26)
+    aimTitle.Position = UDim2.new(0, 14, 0, 14)
     aimTitle.BackgroundTransparency = 1
     aimTitle.Text = "⚔️ <b>AUTO-AIM (TARGET LOCK)</b>"
     aimTitle.RichText = true
@@ -761,17 +771,35 @@ function VortexHub:RenderCombatCategory(contentArea)
     aimTitle.TextXAlignment = Enum.TextXAlignment.Left
     aimTitle.Parent = aimCard
 
+    local aimSub = Instance.new("TextLabel")
+    aimSub.Size = UDim2.new(0.65, 0, 0, 20)
+    aimSub.Position = UDim2.new(0, 14, 0, 42)
+    aimSub.BackgroundTransparency = 1
+    aimSub.Text = "Silent Aim & Metamethod Redirection"
+    aimSub.Font = Enum.Font.GothamMedium
+    aimSub.TextSize = 11.5
+    aimSub.TextColor3 = Color3.fromRGB(150, 155, 170)
+    aimSub.TextXAlignment = Enum.TextXAlignment.Left
+    aimSub.Parent = aimCard
+
     local aimToggle = Instance.new("TextButton")
-    aimToggle.Size = UDim2.new(0, 70, 0, 28)
-    aimToggle.Position = UDim2.new(1, -82, 0, 8)
-    aimToggle.BackgroundColor3 = _G.G_SilentAimSkill and Color3.fromRGB(0, 255, 102) or Color3.fromRGB(45, 38, 80)
+    aimToggle.Size = UDim2.new(0, 78, 0, 34)
+    aimToggle.Position = UDim2.new(1, -92, 0.5, -17)
+    aimToggle.BackgroundColor3 = _G.G_SilentAimSkill and self.AccentColor or Color3.fromRGB(36, 38, 50)
     aimToggle.Text = _G.G_SilentAimSkill and "ON" or "OFF"
     aimToggle.Font = Enum.Font.GothamBold
-    aimToggle.TextSize = 13
-    aimToggle.TextColor3 = _G.G_SilentAimSkill and Color3.fromRGB(15, 12, 28) or Color3.fromRGB(200, 200, 200)
+    aimToggle.TextSize = 13.5
+    aimToggle.TextColor3 = _G.G_SilentAimSkill and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(180, 185, 195)
     aimToggle.Parent = aimCard
 
-    Instance.new("UICorner", aimToggle).CornerRadius = UDim.new(0, 14)
+    local aimToggleCorner = Instance.new("UICorner")
+    aimToggleCorner.CornerRadius = UDim.new(0, 17)
+    aimToggleCorner.Parent = aimToggle
+
+    local aimToggleStroke = Instance.new("UIStroke")
+    aimToggleStroke.Thickness = 1.2
+    aimToggleStroke.Color = _G.G_SilentAimSkill and Color3.fromRGB(255, 100, 120) or Color3.fromRGB(55, 58, 72)
+    aimToggleStroke.Parent = aimToggle
 
     aimToggle.MouseButton1Click:Connect(function()
         _G.G_SilentAimSkill = not _G.G_SilentAimSkill
@@ -779,74 +807,87 @@ function VortexHub:RenderCombatCategory(contentArea)
             currentSilentAimTarget = nil
             updateTargetHighlight(nil)
         end
-        aimToggle.BackgroundColor3 = _G.G_SilentAimSkill and Color3.fromRGB(0, 255, 102) or Color3.fromRGB(45, 38, 80)
+        aimToggle.BackgroundColor3 = _G.G_SilentAimSkill and self.AccentColor or Color3.fromRGB(36, 38, 50)
         aimToggle.Text = _G.G_SilentAimSkill and "ON" or "OFF"
-        aimToggle.TextColor3 = _G.G_SilentAimSkill and Color3.fromRGB(15, 12, 28) or Color3.fromRGB(200, 200, 200)
+        aimToggle.TextColor3 = _G.G_SilentAimSkill and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(180, 185, 195)
+        aimToggleStroke.Color = _G.G_SilentAimSkill and Color3.fromRGB(255, 100, 120) or Color3.fromRGB(55, 58, 72)
     end)
 
-    -- Filtro de Objetivos (Jugadores / NPCs)
-    local filterLabel = Instance.new("TextLabel")
-    filterLabel.Size = UDim2.new(1, -24, 0, 20)
-    filterLabel.Position = UDim2.new(0, 12, 0, 40)
-    filterLabel.BackgroundTransparency = 1
-    filterLabel.Text = "Tipo de Objetivo:"
-    filterLabel.Font = Enum.Font.GothamMedium
-    filterLabel.TextSize = 11.5
-    filterLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
-    filterLabel.TextXAlignment = Enum.TextXAlignment.Left
-    filterLabel.Parent = aimCard
+    -- 2. TARJETA FILTROS DE OBJETIVO
+    local filterCard = Instance.new("Frame")
+    filterCard.Size = UDim2.new(0.95, 0, 0, 130)
+    filterCard.BackgroundColor3 = Color3.fromRGB(22, 24, 34)
+    filterCard.Parent = scroll
+
+    local filterCorner = Instance.new("UICorner")
+    filterCorner.CornerRadius = UDim.new(0, 10)
+    filterCorner.Parent = filterCard
+
+    local filterStroke = Instance.new("UIStroke")
+    filterStroke.Thickness = 1.2
+    filterStroke.Color = Color3.fromRGB(48, 25, 36)
+    filterStroke.Parent = filterCard
+
+    local filterTitle = Instance.new("TextLabel")
+    filterTitle.Size = UDim2.new(1, -24, 0, 24)
+    filterTitle.Position = UDim2.new(0, 14, 0, 10)
+    filterTitle.BackgroundTransparency = 1
+    filterTitle.Text = "🎯 <b>FILTROS DE OBJETIVO</b>"
+    filterTitle.RichText = true
+    filterTitle.Font = Enum.Font.GothamBold
+    filterTitle.TextSize = 13
+    filterTitle.TextColor3 = Color3.fromRGB(240, 200, 255)
+    filterTitle.TextXAlignment = Enum.TextXAlignment.Left
+    filterTitle.Parent = filterCard
 
     local playersToggle = Instance.new("TextButton")
-    playersToggle.Size = UDim2.new(0.44, 0, 0, 30)
-    playersToggle.Position = UDim2.new(0, 12, 0, 62)
-    playersToggle.BackgroundColor3 = _G.G_SilentAimTargetPlayers and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(30, 24, 56)
+    playersToggle.Size = UDim2.new(0.46, 0, 0, 34)
+    playersToggle.Position = UDim2.new(0, 12, 0, 42)
+    playersToggle.BackgroundColor3 = _G.G_SilentAimTargetPlayers and self.AccentColor or Color3.fromRGB(30, 32, 44)
     playersToggle.Text = "👥 Jugadores: " .. (_G.G_SilentAimTargetPlayers and "SI" or "NO")
     playersToggle.Font = Enum.Font.GothamMedium
-    playersToggle.TextSize = 11.5
-    playersToggle.TextColor3 = Color3.fromRGB(240, 200, 255)
-    playersToggle.Parent = aimCard
-
-    Instance.new("UICorner", playersToggle).CornerRadius = UDim.new(0, 6)
+    playersToggle.TextSize = 12
+    playersToggle.TextColor3 = Color3.fromRGB(255, 255, 255)
+    playersToggle.Parent = filterCard
+    Instance.new("UICorner", playersToggle).CornerRadius = UDim.new(0, 7)
 
     playersToggle.MouseButton1Click:Connect(function()
         _G.G_SilentAimTargetPlayers = not _G.G_SilentAimTargetPlayers
         currentSilentAimTarget = nil
         updateTargetHighlight(nil)
-        playersToggle.BackgroundColor3 = _G.G_SilentAimTargetPlayers and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(30, 24, 56)
+        playersToggle.BackgroundColor3 = _G.G_SilentAimTargetPlayers and self.AccentColor or Color3.fromRGB(30, 32, 44)
         playersToggle.Text = "👥 Jugadores: " .. (_G.G_SilentAimTargetPlayers and "SI" or "NO")
     end)
 
     local npcsToggle = Instance.new("TextButton")
-    npcsToggle.Size = UDim2.new(0.44, 0, 0, 30)
-    npcsToggle.Position = UDim2.new(0.51, 0, 0, 62)
-    npcsToggle.BackgroundColor3 = _G.G_SilentAimTargetMobs and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(30, 24, 56)
+    npcsToggle.Size = UDim2.new(0.46, 0, 0, 34)
+    npcsToggle.Position = UDim2.new(0.52, 0, 0, 42)
+    npcsToggle.BackgroundColor3 = _G.G_SilentAimTargetMobs and self.AccentColor or Color3.fromRGB(30, 32, 44)
     npcsToggle.Text = "👾 NPCs/Mobs: " .. (_G.G_SilentAimTargetMobs and "SI" or "NO")
     npcsToggle.Font = Enum.Font.GothamMedium
-    npcsToggle.TextSize = 11.5
-    npcsToggle.TextColor3 = Color3.fromRGB(240, 200, 255)
-    npcsToggle.Parent = aimCard
-
-    Instance.new("UICorner", npcsToggle).CornerRadius = UDim.new(0, 6)
+    npcsToggle.TextSize = 12
+    npcsToggle.TextColor3 = Color3.fromRGB(255, 255, 255)
+    npcsToggle.Parent = filterCard
+    Instance.new("UICorner", npcsToggle).CornerRadius = UDim.new(0, 7)
 
     npcsToggle.MouseButton1Click:Connect(function()
         _G.G_SilentAimTargetMobs = not _G.G_SilentAimTargetMobs
         currentSilentAimTarget = nil
         updateTargetHighlight(nil)
-        npcsToggle.BackgroundColor3 = _G.G_SilentAimTargetMobs and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(30, 24, 56)
+        npcsToggle.BackgroundColor3 = _G.G_SilentAimTargetMobs and self.AccentColor or Color3.fromRGB(30, 32, 44)
         npcsToggle.Text = "👾 NPCs/Mobs: " .. (_G.G_SilentAimTargetMobs and "SI" or "NO")
     end)
 
-    -- Selector de Parte a Impactar (HumanoidRootPart / Head)
     local partBtn = Instance.new("TextButton")
-    partBtn.Size = UDim2.new(0.44, 0, 0, 30)
-    partBtn.Position = UDim2.new(0, 12, 0, 100)
-    partBtn.BackgroundColor3 = Color3.fromRGB(15, 12, 28)
+    partBtn.Size = UDim2.new(0.46, 0, 0, 34)
+    partBtn.Position = UDim2.new(0, 12, 0, 84)
+    partBtn.BackgroundColor3 = Color3.fromRGB(16, 17, 24)
     partBtn.Text = "🎯 Parte: " .. (_G.G_SilentAimPart == "Head" and "Cabeza" or "Cuerpo")
     partBtn.Font = Enum.Font.GothamMedium
-    partBtn.TextSize = 11
+    partBtn.TextSize = 12
     partBtn.TextColor3 = Color3.fromRGB(0, 240, 255)
-    partBtn.Parent = aimCard
-    Instance.new("UICorner", partBtn).CornerRadius = UDim.new(0, 6)
+    partBtn.Parent = filterCard
+    Instance.new("UICorner", partBtn).CornerRadius = UDim.new(0, 7)
 
     partBtn.MouseButton1Click:Connect(function()
         _G.G_SilentAimPart = (_G.G_SilentAimPart == "HumanoidRootPart") and "Head" or "HumanoidRootPart"
@@ -854,37 +895,69 @@ function VortexHub:RenderCombatCategory(contentArea)
         partBtn.Text = "🎯 Parte: " .. (_G.G_SilentAimPart == "Head" and "Cabeza" or "Cuerpo")
     end)
 
-    -- Toggle PlayerHighlight (Rojo Puro)
     local highlightBtn = Instance.new("TextButton")
-    highlightBtn.Size = UDim2.new(0.44, 0, 0, 30)
-    highlightBtn.Position = UDim2.new(0.51, 0, 0, 100)
-    highlightBtn.BackgroundColor3 = _G.G_PlayerHighlight and Color3.fromRGB(220, 30, 30) or Color3.fromRGB(15, 12, 28)
+    highlightBtn.Size = UDim2.new(0.46, 0, 0, 34)
+    highlightBtn.Position = UDim2.new(0.52, 0, 0, 84)
+    highlightBtn.BackgroundColor3 = _G.G_PlayerHighlight and self.AccentColor or Color3.fromRGB(30, 32, 44)
     highlightBtn.Text = "🔴 Highlight: " .. (_G.G_PlayerHighlight and "ON" or "OFF")
     highlightBtn.Font = Enum.Font.GothamMedium
-    highlightBtn.TextSize = 11
-    highlightBtn.TextColor3 = _G.G_PlayerHighlight and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(200, 200, 200)
-    highlightBtn.Parent = aimCard
-    Instance.new("UICorner", highlightBtn).CornerRadius = UDim.new(0, 6)
+    highlightBtn.TextSize = 12
+    highlightBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    highlightBtn.Parent = filterCard
+    Instance.new("UICorner", highlightBtn).CornerRadius = UDim.new(0, 7)
 
     highlightBtn.MouseButton1Click:Connect(function()
         _G.G_PlayerHighlight = not _G.G_PlayerHighlight
         if not _G.G_PlayerHighlight then updateTargetHighlight(nil) end
-        highlightBtn.BackgroundColor3 = _G.G_PlayerHighlight and Color3.fromRGB(220, 30, 30) or Color3.fromRGB(15, 12, 28)
+        highlightBtn.BackgroundColor3 = _G.G_PlayerHighlight and self.AccentColor or Color3.fromRGB(30, 32, 44)
         highlightBtn.Text = "🔴 Highlight: " .. (_G.G_PlayerHighlight and "ON" or "OFF")
-        highlightBtn.TextColor3 = _G.G_PlayerHighlight and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(200, 200, 200)
     end)
 
-    -- Selector de Objetivo Específico
+    -- 3. TARJETA SELECTOR DE OBJETIVO ESPECÍFICO
+    local targetCard = Instance.new("Frame")
+    targetCard.Size = UDim2.new(0.95, 0, 0, 90)
+    targetCard.BackgroundColor3 = Color3.fromRGB(22, 24, 34)
+    targetCard.Parent = scroll
+
+    local targetCorner = Instance.new("UICorner")
+    targetCorner.CornerRadius = UDim.new(0, 10)
+    targetCorner.Parent = targetCard
+
+    local targetStroke = Instance.new("UIStroke")
+    targetStroke.Thickness = 1.2
+    targetStroke.Color = Color3.fromRGB(48, 25, 36)
+    targetStroke.Parent = targetCard
+
+    local targetTitle = Instance.new("TextLabel")
+    targetTitle.Size = UDim2.new(1, -24, 0, 24)
+    targetTitle.Position = UDim2.new(0, 14, 0, 10)
+    targetTitle.BackgroundTransparency = 1
+    targetTitle.Text = "🎯 <b>OBJETIVO ESPECÍFICO</b>"
+    targetTitle.RichText = true
+    targetTitle.Font = Enum.Font.GothamBold
+    targetTitle.TextSize = 13
+    targetTitle.TextColor3 = Color3.fromRGB(240, 200, 255)
+    targetTitle.TextXAlignment = Enum.TextXAlignment.Left
+    targetTitle.Parent = targetCard
+
     local targetSelectBtn = Instance.new("TextButton")
-    targetSelectBtn.Size = UDim2.new(0.95, -24, 0, 32)
-    targetSelectBtn.Position = UDim2.new(0, 12, 0, 140)
-    targetSelectBtn.BackgroundColor3 = Color3.fromRGB(15, 12, 28)
+    targetSelectBtn.Size = UDim2.new(1, -28, 0, 36)
+    targetSelectBtn.Position = UDim2.new(0, 14, 0, 42)
+    targetSelectBtn.BackgroundColor3 = Color3.fromRGB(16, 17, 24)
     targetSelectBtn.Text = "🎯 Objetivo: " .. (_G.G_SilentAimSelectedPlayer ~= "" and _G.G_SilentAimSelectedPlayer or "Más Cercano")
     targetSelectBtn.Font = Enum.Font.GothamMedium
-    targetSelectBtn.TextSize = 11.5
+    targetSelectBtn.TextSize = 12.5
     targetSelectBtn.TextColor3 = Color3.fromRGB(0, 240, 255)
-    targetSelectBtn.Parent = aimCard
-    Instance.new("UICorner", targetSelectBtn).CornerRadius = UDim.new(0, 6)
+    targetSelectBtn.Parent = targetCard
+
+    local targetBtnCorner = Instance.new("UICorner")
+    targetBtnCorner.CornerRadius = UDim.new(0, 7)
+    targetBtnCorner.Parent = targetSelectBtn
+
+    local targetBtnStroke = Instance.new("UIStroke")
+    targetBtnStroke.Thickness = 1
+    targetBtnStroke.Color = Color3.fromRGB(48, 52, 68)
+    targetBtnStroke.Parent = targetSelectBtn
 
     targetSelectBtn.MouseButton1Click:Connect(function()
         local plist = {"Más Cercano"}
@@ -896,73 +969,6 @@ function VortexHub:RenderCombatCategory(contentArea)
         _G.G_SilentAimSelectedPlayer = (plist[nextIdx] == "Más Cercano") and "" or plist[nextIdx]
         currentSilentAimTarget = nil
         targetSelectBtn.Text = "🎯 Objetivo: " .. plist[nextIdx]
-    end)
-
-    -- 2. TARJETA RASTREADOR DE JUGADOR (PLAYER TRACKER)
-    local trackerCard = Instance.new("Frame")
-    trackerCard.Size = UDim2.new(0.95, 0, 0, 125)
-    trackerCard.BackgroundColor3 = Color3.fromRGB(22, 18, 42)
-    trackerCard.Parent = scroll
-
-    local trackCorner = Instance.new("UICorner")
-    trackCorner.CornerRadius = UDim.new(0, 10)
-    trackCorner.Parent = trackerCard
-
-    local trackTitle = Instance.new("TextLabel")
-    trackTitle.Size = UDim2.new(0, 200, 0, 30)
-    trackTitle.Position = UDim2.new(0, 12, 0, 8)
-    trackTitle.BackgroundTransparency = 1
-    trackTitle.Text = "📡 <b>RASTREADOR ESP (JUGADORES)</b>"
-    trackTitle.RichText = true
-    trackTitle.Font = Enum.Font.GothamBold
-    trackTitle.TextSize = 13
-    trackTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
-    trackTitle.TextXAlignment = Enum.TextXAlignment.Left
-    trackTitle.Parent = trackerCard
-
-    local trackToggle = Instance.new("TextButton")
-    trackToggle.Size = UDim2.new(0, 70, 0, 28)
-    trackToggle.Position = UDim2.new(1, -82, 0, 8)
-    trackToggle.BackgroundColor3 = self.TrackerEnabled and Color3.fromRGB(0, 240, 255) or Color3.fromRGB(45, 38, 80)
-    trackToggle.Text = self.TrackerEnabled and "ON" or "OFF"
-    trackToggle.Font = Enum.Font.GothamBold
-    trackToggle.TextSize = 13
-    trackToggle.TextColor3 = self.TrackerEnabled and Color3.fromRGB(15, 12, 28) or Color3.fromRGB(200, 200, 200)
-    trackToggle.Parent = trackerCard
-
-    Instance.new("UICorner", trackToggle).CornerRadius = UDim.new(0, 14)
-
-    local metricsText = Instance.new("TextLabel")
-    metricsText.Size = UDim2.new(0.95, 0, 0, 75)
-    metricsText.Position = UDim2.new(0, 12, 0, 44)
-    metricsText.BackgroundTransparency = 1
-    metricsText.Text = "Distancia: <b>-- m</b> (-- studs)<br/>Posición X, Y, Z: <b>(0, 0, 0)</b><br/>Salud Objetivo: <b>-- %</b>"
-    metricsText.RichText = true
-    metricsText.Font = Enum.Font.Gotham
-    metricsText.TextSize = 12
-    metricsText.TextColor3 = Color3.fromRGB(200, 200, 200)
-    metricsText.TextXAlignment = Enum.TextXAlignment.Left
-    metricsText.Parent = trackerCard
-
-    trackToggle.MouseButton1Click:Connect(function()
-        local newState = not self.TrackerEnabled
-        self:RunCommand("player_tracker", { enabled = newState })
-        
-        trackToggle.BackgroundColor3 = self.TrackerEnabled and Color3.fromRGB(0, 240, 255) or Color3.fromRGB(45, 38, 80)
-        trackToggle.Text = self.TrackerEnabled and "ON" or "OFF"
-        trackToggle.TextColor3 = self.TrackerEnabled and Color3.fromRGB(15, 12, 28) or Color3.fromRGB(200, 200, 200)
-    end)
-
-    Services.RunService.Heartbeat:Connect(function()
-        if self.TrackerEnabled and self.TrackedData and metricsText and metricsText.Parent then
-            local data = self.TrackedData
-            metricsText.Text = string.format(
-                "Distancia: <font color='#00FF66'><b>%d m</b> (%d studs)</font><br/>Posición X, Y, Z: <b>(%d, %d, %d)</b><br/>Salud Objetivo: <font color='#FF2400'><b>%d%%</b></font>",
-                data.Meters or 0, data.Studs or 0,
-                math.floor(data.Position.X or 0), math.floor(data.Position.Y or 0), math.floor(data.Position.Z or 0),
-                data.Health or 100
-            )
-        end
     end)
 end
 
@@ -1052,13 +1058,14 @@ function VortexHub:BuildUI()
 
     MakeDraggable(toggleBtn)
 
+    -- Frame Principal (25% Mayor Altura: 0.90 de escala)
     local mainFrame = Instance.new("Frame")
     mainFrame.Name = "VortexMainFrame"
-    mainFrame.Size = UDim2.new(0.75, 0, 0.78, 0)
+    mainFrame.Size = UDim2.new(0.78, 0, 0.90, 0)
     mainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
     mainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
-    mainFrame.BackgroundColor3 = Color3.fromRGB(15, 12, 28)
-    mainFrame.BackgroundTransparency = 0.1
+    mainFrame.BackgroundColor3 = Color3.fromRGB(16, 17, 24)
+    mainFrame.BackgroundTransparency = 0.05
     mainFrame.Visible = true
     mainFrame.Parent = screen
 
@@ -1076,40 +1083,42 @@ function VortexHub:BuildUI()
         mainFrame.Visible = not mainFrame.Visible
     end)
 
+    -- Header Bar
     local header = Instance.new("Frame")
-    header.Size = UDim2.new(1, 0, 0, 45)
-    header.BackgroundColor3 = Color3.fromRGB(22, 18, 42)
+    header.Size = UDim2.new(1, 0, 0, 48)
+    header.BackgroundColor3 = Color3.fromRGB(20, 22, 30)
     header.Parent = mainFrame
 
     local headerCorner = Instance.new("UICorner")
     headerCorner.CornerRadius = UDim.new(0, 14)
     headerCorner.Parent = header
 
+    -- Título Centrado VORTEXHUB
     local titleContainer = Instance.new("Frame")
-    titleContainer.Size = UDim2.new(0, 210, 0, 32)
-    titleContainer.Position = UDim2.new(0, 10, 0.5, -16)
-    titleContainer.BackgroundColor3 = Color3.fromRGB(30, 24, 56)
+    titleContainer.Size = UDim2.new(0, 260, 0, 36)
+    titleContainer.Position = UDim2.new(0.5, 0, 0.5, 0)
+    titleContainer.AnchorPoint = Vector2.new(0.5, 0.5)
+    titleContainer.BackgroundTransparency = 1
     titleContainer.Parent = header
 
-    local titleCorner = Instance.new("UICorner")
-    titleCorner.CornerRadius = UDim.new(0, 8)
-    titleCorner.Parent = titleContainer
-
     local titleText = Instance.new("TextLabel")
-    titleText.Size = UDim2.new(1, -16, 1, 0)
-    titleText.Position = UDim2.new(0, 12, 0, 0)
+    titleText.Size = UDim2.new(1, 0, 1, 0)
+    titleText.Position = UDim2.new(0, 0, 0, 0)
     titleText.BackgroundTransparency = 1
-    titleText.Text = "🌀 <b>VORTEXHUB</b>"
     titleText.RichText = true
+    titleText.Text = "— <font color='#FFFFFF'><b>VORTEX</b></font><font color='#FF2438'><b>HUB</b></font> —"
     titleText.Font = Enum.Font.GothamBold
-    titleText.TextSize = 16
-    titleText.TextColor3 = Color3.fromRGB(240, 200, 255)
-    titleText.TextXAlignment = Enum.TextXAlignment.Left
+    titleText.TextSize = 18
+    titleText.TextColor3 = Color3.fromRGB(255, 255, 255)
+    titleText.TextXAlignment = Enum.TextXAlignment.Center
+    titleText:SetAttribute("IsHeaderTitle", true)
     titleText.Parent = titleContainer
+    table.insert(self.ThemeElements, titleText)
 
+    -- Theme Presets (Derecha, antes del botón X)
     local themeContainer = Instance.new("Frame")
-    themeContainer.Size = UDim2.new(0, 160, 0, 30)
-    themeContainer.Position = UDim2.new(1, -210, 0.5, -15)
+    themeContainer.Size = UDim2.new(0, 150, 0, 24)
+    themeContainer.Position = UDim2.new(1, -200, 0.5, -12)
     themeContainer.BackgroundTransparency = 1
     themeContainer.Parent = header
 
@@ -1122,7 +1131,7 @@ function VortexHub:BuildUI()
 
     for themeName, color in pairs(self.Themes) do
         local dot = Instance.new("TextButton")
-        dot.Size = UDim2.new(0, 18, 0, 18)
+        dot.Size = UDim2.new(0, 16, 0, 16)
         dot.BackgroundColor3 = color
         dot.Text = ""
         dot.Parent = themeContainer
@@ -1136,10 +1145,11 @@ function VortexHub:BuildUI()
         end)
     end
 
+    -- Close Button (X Roja)
     local closeBtn = Instance.new("TextButton")
     closeBtn.Size = UDim2.new(0, 28, 0, 28)
     closeBtn.Position = UDim2.new(1, -38, 0.5, -14)
-    closeBtn.BackgroundColor3 = Color3.fromRGB(45, 18, 25)
+    closeBtn.BackgroundColor3 = Color3.fromRGB(48, 18, 26)
     closeBtn.BackgroundTransparency = 0
     closeBtn.Text = "X"
     closeBtn.TextColor3 = Color3.fromRGB(255, 45, 45)
@@ -1161,10 +1171,11 @@ function VortexHub:BuildUI()
         mainFrame.Visible = false
     end)
 
+    -- Sidebar (Única Pestaña: Combat)
     local sidebar = Instance.new("Frame")
-    sidebar.Size = UDim2.new(0.25, 0, 1, -45)
-    sidebar.Position = UDim2.new(0, 0, 0, 45)
-    sidebar.BackgroundColor3 = Color3.fromRGB(18, 14, 34)
+    sidebar.Size = UDim2.new(0.24, 0, 1, -48)
+    sidebar.Position = UDim2.new(0, 0, 0, 48)
+    sidebar.BackgroundColor3 = Color3.fromRGB(18, 19, 27)
     sidebar.Parent = mainFrame
 
     local sideLayout = Instance.new("UIListLayout")
@@ -1173,27 +1184,33 @@ function VortexHub:BuildUI()
     sideLayout.Parent = sidebar
 
     local sidePad = Instance.new("UIPadding")
-    sidePad.PaddingTop = UDim.new(0, 12)
+    sidePad.PaddingTop = UDim.new(0, 14)
     sidePad.Parent = sidebar
 
     local contentArea = Instance.new("Frame")
-    contentArea.Size = UDim2.new(0.75, 0, 1, -45)
-    contentArea.Position = UDim2.new(0.25, 0, 0, 45)
+    contentArea.Size = UDim2.new(0.76, 0, 1, -48)
+    contentArea.Position = UDim2.new(0.24, 0, 0, 48)
     contentArea.BackgroundTransparency = 1
     contentArea.Parent = mainFrame
 
     local combatTabBtn = Instance.new("TextButton")
-    combatTabBtn.Size = UDim2.new(0.88, 0, 0, 42)
-    combatTabBtn.BackgroundColor3 = Color3.fromRGB(35, 28, 65)
-    combatTabBtn.Text = "🎯 Combat"
+    combatTabBtn.Size = UDim2.new(0.88, 0, 0, 44)
+    combatTabBtn.BackgroundColor3 = Color3.fromRGB(38, 20, 30)
+    combatTabBtn.Text = "⚔️  Combat   ◀"
     combatTabBtn.Font = Enum.Font.GothamBold
-    combatTabBtn.TextSize = 14
-    combatTabBtn.TextColor3 = Color3.fromRGB(240, 200, 255)
+    combatTabBtn.TextSize = 13
+    combatTabBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
     combatTabBtn.Parent = sidebar
 
     local tabCorner = Instance.new("UICorner")
     tabCorner.CornerRadius = UDim.new(0, 8)
     tabCorner.Parent = combatTabBtn
+
+    local tabStroke = Instance.new("UIStroke")
+    tabStroke.Thickness = 1.5
+    tabStroke.Color = self.AccentColor
+    tabStroke.Parent = combatTabBtn
+    table.insert(self.ThemeElements, tabStroke)
 
     combatTabBtn.MouseButton1Click:Connect(function()
         self:RenderCombatCategory(contentArea)
@@ -1201,7 +1218,7 @@ function VortexHub:BuildUI()
 
     MakeDraggable(mainFrame, header)
     self:RenderCombatCategory(contentArea)
-    print("[VortexHub] UI montada.")
+    print("[VortexHub] UI Rediseñada y Montada.")
 end
 
 --------------------------------------------------------------------------------
