@@ -1053,6 +1053,168 @@ function VortexHub:RenderCombatCategory(contentArea)
     end)
 end
 
+function VortexHub:RenderAppearanceCategory(contentArea)
+    if not contentArea then return end
+    contentArea:ClearAllChildren()
+
+    local btnAsset = GetCyberAsset("cyber_button_v2.png", "https://raw.githubusercontent.com/MasterPiddy/VortexHub/main/assets/cyber_button.png")
+
+    local scroll = Instance.new("ScrollingFrame")
+    scroll.Size = UDim2.new(1, -8, 1, -8)
+    scroll.Position = UDim2.new(0, 4, 0, 4)
+    scroll.BackgroundTransparency = 1
+    scroll.ScrollBarThickness = 4
+    scroll.ScrollBarImageColor3 = self.AccentColor
+    scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+    scroll.Parent = contentArea
+
+    local listLayout = Instance.new("UIListLayout")
+    listLayout.Padding = UDim.new(0, 10)
+    listLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    listLayout.Parent = scroll
+
+    local padding = Instance.new("UIPadding")
+    padding.PaddingTop = UDim.new(0, 8)
+    padding.PaddingBottom = UDim.new(0, 8)
+    padding.PaddingLeft = UDim.new(0, 6)
+    padding.PaddingRight = UDim.new(0, 6)
+    padding.Parent = scroll
+
+    -- 1. TARJETA TEMAS DE COLOR
+    local themeCard = Instance.new("Frame")
+    themeCard.Size = UDim2.new(1, 0, 0, 230)
+    themeCard.BackgroundColor3 = Color3.fromRGB(20, 22, 32)
+    themeCard.BackgroundTransparency = 0.2
+    themeCard.Parent = scroll
+
+    local themeCorner = Instance.new("UICorner")
+    themeCorner.CornerRadius = UDim.new(0, 8)
+    themeCorner.Parent = themeCard
+
+    local themeStroke = Instance.new("UIStroke")
+    themeStroke.Thickness = 1.2
+    themeStroke.Color = Color3.fromRGB(48, 25, 38)
+    themeStroke.Parent = themeCard
+
+    local themeTitle = Instance.new("TextLabel")
+    themeTitle.Size = UDim2.new(1, -24, 0, 22)
+    themeTitle.Position = UDim2.new(0, 12, 0, 10)
+    themeTitle.BackgroundTransparency = 1
+    themeTitle.Text = "🎨 <b>NEON THEME ACCENT</b>"
+    themeTitle.RichText = true
+    themeTitle.Font = Enum.Font.GothamBold
+    themeTitle.TextSize = 13.5
+    themeTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+    themeTitle.TextXAlignment = Enum.TextXAlignment.Left
+    themeTitle.Parent = themeCard
+
+    local themeSub = Instance.new("TextLabel")
+    themeSub.Size = UDim2.new(1, -24, 0, 18)
+    themeSub.Position = UDim2.new(0, 12, 0, 32)
+    themeSub.BackgroundTransparency = 1
+    themeSub.Text = "Elige el color de acento del hub"
+    themeSub.Font = Enum.Font.GothamMedium
+    themeSub.TextSize = 11
+    themeSub.TextColor3 = Color3.fromRGB(150, 155, 170)
+    themeSub.TextXAlignment = Enum.TextXAlignment.Left
+    themeSub.Parent = themeCard
+
+    local themeList = {
+        { name = "Crimson Flagship", color = self.Themes.Crimson, icon = "🔴" },
+        { name = "Cyan Cyberpunk", color = self.Themes.Cyan, icon = "🔵" },
+        { name = "Emerald Matrix", color = self.Themes.Emerald, icon = "🟢" },
+        { name = "Neon Amethyst", color = self.Themes.Purple, icon = "🟣" },
+        { name = "Solar Amber", color = self.Themes.Amber, icon = "🟡" },
+    }
+
+    local yPos = 54
+    for _, t in ipairs(themeList) do
+        local tBtn = Instance.new("ImageButton")
+        tBtn.Size = UDim2.new(1, -20, 0, 30)
+        tBtn.Position = UDim2.new(0, 10, 0, yPos)
+        tBtn.BackgroundTransparency = 1
+        tBtn.Image = btnAsset
+        tBtn.ScaleType = Enum.ScaleType.Slice
+        tBtn.SliceCenter = Rect.new(28, 28, 100, 36)
+        tBtn.ImageColor3 = t.color
+        tBtn.Parent = themeCard
+
+        local tLabel = Instance.new("TextLabel")
+        tLabel.Size = UDim2.new(1, 0, 1, 0)
+        tLabel.BackgroundTransparency = 1
+        tLabel.Text = t.icon .. "  " .. t.name
+        tLabel.Font = Enum.Font.GothamBold
+        tLabel.TextSize = 12
+        tLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+        tLabel.Parent = tBtn
+
+        tBtn.MouseButton1Click:Connect(function()
+            self:SetAccentColor(t.color)
+        end)
+
+        yPos = yPos + 34
+    end
+
+    -- 2. TARJETA VISIBILIDAD BOTÓN FLOTANTE
+    local btnCard = Instance.new("Frame")
+    btnCard.Size = UDim2.new(1, 0, 0, 84)
+    btnCard.BackgroundColor3 = Color3.fromRGB(20, 22, 32)
+    btnCard.BackgroundTransparency = 0.2
+    btnCard.Parent = scroll
+
+    local btnCorner = Instance.new("UICorner")
+    btnCorner.CornerRadius = UDim.new(0, 8)
+    btnCorner.Parent = btnCard
+
+    local btnStroke = Instance.new("UIStroke")
+    btnStroke.Thickness = 1.2
+    btnStroke.Color = Color3.fromRGB(48, 25, 38)
+    btnStroke.Parent = btnCard
+
+    local btnTitle = Instance.new("TextLabel")
+    btnTitle.Size = UDim2.new(1, -24, 0, 22)
+    btnTitle.Position = UDim2.new(0, 12, 0, 10)
+    btnTitle.BackgroundTransparency = 1
+    btnTitle.Text = "🔘 <b>BOTÓN FLOTANTE VORTEX</b>"
+    btnTitle.RichText = true
+    btnTitle.Font = Enum.Font.GothamBold
+    btnTitle.TextSize = 13
+    btnTitle.TextColor3 = Color3.fromRGB(240, 200, 255)
+    btnTitle.TextXAlignment = Enum.TextXAlignment.Left
+    btnTitle.Parent = btnCard
+
+    local toggleVisBtn = Instance.new("ImageButton")
+    toggleVisBtn.Size = UDim2.new(1, -20, 0, 36)
+    toggleVisBtn.Position = UDim2.new(0, 10, 0, 38)
+    toggleVisBtn.BackgroundTransparency = 1
+    toggleVisBtn.Image = btnAsset
+    toggleVisBtn.ScaleType = Enum.ScaleType.Slice
+    toggleVisBtn.SliceCenter = Rect.new(28, 28, 100, 36)
+    toggleVisBtn.ImageColor3 = (self.ToggleButton and self.ToggleButton.Visible) and self.AccentColor or Color3.fromRGB(80, 85, 100)
+    toggleVisBtn:SetAttribute("IsThemeAccent", (self.ToggleButton and self.ToggleButton.Visible))
+    toggleVisBtn.Parent = btnCard
+    table.insert(self.ThemeElements, toggleVisBtn)
+
+    local toggleVisLabel = Instance.new("TextLabel")
+    toggleVisLabel.Size = UDim2.new(1, 0, 1, 0)
+    toggleVisLabel.BackgroundTransparency = 1
+    toggleVisLabel.Text = (self.ToggleButton and self.ToggleButton.Visible) and "🔘 Botón Flotante: VISIBLE" or "🚫 Botón Flotante: OCULTO"
+    toggleVisLabel.Font = Enum.Font.GothamMedium
+    toggleVisLabel.TextSize = 12.5
+    toggleVisLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    toggleVisLabel.Parent = toggleVisBtn
+
+    toggleVisBtn.MouseButton1Click:Connect(function()
+        if self.ToggleButton then
+            self.ToggleButton.Visible = not self.ToggleButton.Visible
+            toggleVisBtn.ImageColor3 = self.ToggleButton.Visible and self.AccentColor or Color3.fromRGB(80, 85, 100)
+            toggleVisBtn:SetAttribute("IsThemeAccent", self.ToggleButton.Visible)
+            toggleVisLabel.Text = self.ToggleButton.Visible and "🔘 Botón Flotante: VISIBLE" or "🚫 Botón Flotante: OCULTO"
+        end
+    end)
+end
+
 function VortexHub:BuildUI()
     local parentGui = nil
     if gethui then
@@ -1088,6 +1250,7 @@ function VortexHub:BuildUI()
     toggleBtn.AutoButtonColor = true
     toggleBtn.ClipsDescendants = true
     toggleBtn.Parent = screen
+    self.ToggleButton = toggleBtn
 
     local btnCorner = Instance.new("UICorner")
     btnCorner.CornerRadius = UDim.new(1, 0)
@@ -1171,8 +1334,8 @@ function VortexHub:BuildUI()
 
     -- Título Centrado VORTEXHUB
     local titleContainer = Instance.new("Frame")
-    titleContainer.Size = UDim2.new(0, 200, 0, 34)
-    titleContainer.Position = UDim2.new(0.36, 0, 0.5, 0)
+    titleContainer.Size = UDim2.new(0, 220, 0, 34)
+    titleContainer.Position = UDim2.new(0.5, 0, 0.5, 0)
     titleContainer.AnchorPoint = Vector2.new(0.5, 0.5)
     titleContainer.BackgroundTransparency = 1
     titleContainer.Parent = header
@@ -1184,42 +1347,37 @@ function VortexHub:BuildUI()
     titleText.RichText = true
     titleText.Text = "— <font color='#FFFFFF'><b>VORTEX</b></font><font color='#FF2438'><b>HUB</b></font> —"
     titleText.Font = Enum.Font.GothamBold
-    titleText.TextSize = 16
+    titleText.TextSize = 16.5
     titleText.TextColor3 = Color3.fromRGB(255, 255, 255)
     titleText.TextXAlignment = Enum.TextXAlignment.Center
     titleText:SetAttribute("IsHeaderTitle", true)
     titleText.Parent = titleContainer
     table.insert(self.ThemeElements, titleText)
 
-    -- Theme Presets
-    local themeContainer = Instance.new("Frame")
-    themeContainer.Size = UDim2.new(0, 110, 0, 22)
-    themeContainer.Position = UDim2.new(1, -150, 0.5, -11)
-    themeContainer.BackgroundTransparency = 1
-    themeContainer.Parent = header
+    -- Hide / Minimize Button (Disappear floating button + close GUI, background features keep running)
+    local hideBtn = Instance.new("ImageButton")
+    hideBtn.Size = UDim2.new(0, 26, 0, 26)
+    hideBtn.Position = UDim2.new(1, -66, 0.5, -13)
+    hideBtn.BackgroundTransparency = 1
+    hideBtn.Image = btnAsset
+    hideBtn.ScaleType = Enum.ScaleType.Slice
+    hideBtn.SliceCenter = Rect.new(28, 28, 100, 36)
+    hideBtn.ImageColor3 = Color3.fromRGB(75, 80, 100)
+    hideBtn.Parent = header
 
-    local themeLayout = Instance.new("UIListLayout")
-    themeLayout.FillDirection = Enum.FillDirection.Horizontal
-    themeLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
-    themeLayout.VerticalAlignment = Enum.VerticalAlignment.Center
-    themeLayout.Padding = UDim.new(0, 4)
-    themeLayout.Parent = themeContainer
+    local hideLabel = Instance.new("TextLabel")
+    hideLabel.Size = UDim2.new(1, 0, 1, 0)
+    hideLabel.BackgroundTransparency = 1
+    hideLabel.Text = "—"
+    hideLabel.TextColor3 = Color3.fromRGB(220, 225, 240)
+    hideLabel.Font = Enum.Font.GothamBold
+    hideLabel.TextSize = 14
+    hideLabel.Parent = hideBtn
 
-    for themeName, color in pairs(self.Themes) do
-        local dot = Instance.new("TextButton")
-        dot.Size = UDim2.new(0, 14, 0, 14)
-        dot.BackgroundColor3 = color
-        dot.Text = ""
-        dot.Parent = themeContainer
-        
-        local dotCorner = Instance.new("UICorner")
-        dotCorner.CornerRadius = UDim.new(1, 0)
-        dotCorner.Parent = dot
-
-        dot.MouseButton1Click:Connect(function()
-            self:SetAccentColor(color)
-        end)
-    end
+    hideBtn.MouseButton1Click:Connect(function()
+        toggleBtn.Visible = false
+        mainFrame.Visible = false
+    end)
 
     -- Close Button (Chamfered Red X)
     local closeBtn = Instance.new("ImageButton")
@@ -1268,6 +1426,15 @@ function VortexHub:BuildUI()
     sidebarStroke.Color = Color3.fromRGB(36, 38, 50)
     sidebarStroke.Parent = sidebar
 
+    local sideLayout = Instance.new("UIListLayout")
+    sideLayout.Padding = UDim.new(0, 8)
+    sideLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    sideLayout.Parent = sidebar
+
+    local sidePad = Instance.new("UIPadding")
+    sidePad.PaddingTop = UDim.new(0, 10)
+    sidePad.Parent = sidebar
+
     -- Right Content Sub-Window (Recessed Cyber Plate)
     local contentArea = Instance.new("Frame")
     contentArea.Size = UDim2.new(0.70, 0, 1, -14)
@@ -1286,10 +1453,9 @@ function VortexHub:BuildUI()
     contentStroke.Parent = contentArea
     table.insert(self.ThemeElements, contentStroke)
 
-    -- Active Selected Tab with Pointer Arrow Pointing Right into Content Window
+    -- Tab 1: Combat Button
     local combatTabBtn = Instance.new("ImageButton")
-    combatTabBtn.Size = UDim2.new(1, 10, 0, 44) -- Extends 10px right to seamlessly point into the content window
-    combatTabBtn.Position = UDim2.new(0, 3, 0, 10)
+    combatTabBtn.Size = UDim2.new(0.96, 6, 0, 42)
     combatTabBtn.BackgroundTransparency = 1
     combatTabBtn.Image = tabActiveAsset
     combatTabBtn.ScaleType = Enum.ScaleType.Slice
@@ -1301,24 +1467,100 @@ function VortexHub:BuildUI()
     table.insert(self.ThemeElements, combatTabBtn)
 
     local combatTabLabel = Instance.new("TextLabel")
-    combatTabLabel.Size = UDim2.new(1, -20, 1, 0)
+    combatTabLabel.Size = UDim2.new(1, -16, 1, 0)
     combatTabLabel.Position = UDim2.new(0, 8, 0, 0)
     combatTabLabel.BackgroundTransparency = 1
     combatTabLabel.Text = "⚔️  COMBAT"
     combatTabLabel.Font = Enum.Font.GothamBold
-    combatTabLabel.TextSize = 12.5
+    combatTabLabel.TextSize = 12
     combatTabLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
     combatTabLabel.TextXAlignment = Enum.TextXAlignment.Left
     combatTabLabel.ZIndex = 6
     combatTabLabel.Parent = combatTabBtn
 
+    -- Tab 2: Appearance Button
+    local appearanceTabBtn = Instance.new("ImageButton")
+    appearanceTabBtn.Size = UDim2.new(0.96, 6, 0, 42)
+    appearanceTabBtn.BackgroundTransparency = 0.3
+    appearanceTabBtn.BackgroundColor3 = Color3.fromRGB(22, 24, 34)
+    appearanceTabBtn.Image = ""
+    appearanceTabBtn.ScaleType = Enum.ScaleType.Slice
+    appearanceTabBtn.SliceCenter = Rect.new(26, 24, 132, 40)
+    appearanceTabBtn.ImageColor3 = self.AccentColor
+    appearanceTabBtn:SetAttribute("IsThemeAccent", false)
+    appearanceTabBtn.ZIndex = 2
+    appearanceTabBtn.Parent = sidebar
+    Instance.new("UICorner", appearanceTabBtn).CornerRadius = UDim.new(0, 8)
+
+    local appearanceTabLabel = Instance.new("TextLabel")
+    appearanceTabLabel.Size = UDim2.new(1, -16, 1, 0)
+    appearanceTabLabel.Position = UDim2.new(0, 8, 0, 0)
+    appearanceTabLabel.BackgroundTransparency = 1
+    appearanceTabLabel.Text = "🎨  APPEAR"
+    appearanceTabLabel.Font = Enum.Font.GothamBold
+    appearanceTabLabel.TextSize = 11.5
+    appearanceTabLabel.TextColor3 = Color3.fromRGB(150, 155, 170)
+    appearanceTabLabel.TextXAlignment = Enum.TextXAlignment.Left
+    appearanceTabLabel.ZIndex = 6
+    appearanceTabLabel.Parent = appearanceTabBtn
+
+    local currentTab = "Combat"
+    local function SwitchTab(tabName)
+        currentTab = tabName
+        if tabName == "Combat" then
+            combatTabBtn.Image = tabActiveAsset
+            combatTabBtn.BackgroundTransparency = 1
+            combatTabBtn.ImageColor3 = self.AccentColor
+            combatTabBtn:SetAttribute("IsThemeAccent", true)
+            combatTabBtn.ZIndex = 5
+            combatTabLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+
+            appearanceTabBtn.Image = ""
+            appearanceTabBtn.BackgroundTransparency = 0.3
+            appearanceTabBtn.BackgroundColor3 = Color3.fromRGB(22, 24, 34)
+            appearanceTabBtn:SetAttribute("IsThemeAccent", false)
+            appearanceTabBtn.ZIndex = 2
+            appearanceTabLabel.TextColor3 = Color3.fromRGB(150, 155, 170)
+
+            self:RenderCombatCategory(contentArea)
+        else
+            appearanceTabBtn.Image = tabActiveAsset
+            appearanceTabBtn.BackgroundTransparency = 1
+            appearanceTabBtn.ImageColor3 = self.AccentColor
+            appearanceTabBtn:SetAttribute("IsThemeAccent", true)
+            appearanceTabBtn.ZIndex = 5
+            appearanceTabLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+
+            combatTabBtn.Image = ""
+            combatTabBtn.BackgroundTransparency = 0.3
+            combatTabBtn.BackgroundColor3 = Color3.fromRGB(22, 24, 34)
+            combatTabBtn:SetAttribute("IsThemeAccent", false)
+            combatTabBtn.ZIndex = 2
+            combatTabLabel.TextColor3 = Color3.fromRGB(150, 155, 170)
+
+            self:RenderAppearanceCategory(contentArea)
+        end
+    end
+
     combatTabBtn.MouseButton1Click:Connect(function()
-        self:RenderCombatCategory(contentArea)
+        SwitchTab("Combat")
+    end)
+
+    appearanceTabBtn.MouseButton1Click:Connect(function()
+        SwitchTab("Appearance")
+    end)
+
+    -- Keyboard shortcut (RightShift / RightControl) to bring back UI if hidden
+    Services.UserInputService.InputBegan:Connect(function(input, processed)
+        if not processed and (input.KeyCode == Enum.KeyCode.RightControl or input.KeyCode == Enum.KeyCode.RightShift) then
+            toggleBtn.Visible = true
+            mainFrame.Visible = not mainFrame.Visible
+        end
     end)
 
     MakeDraggable(mainFrame, header)
     self:RenderCombatCategory(contentArea)
-    print("[VortexHub] UI Cybernetica 9-Slice Montada.")
+    print("[VortexHub] UI Cybernetica con Pestaña Appearance Montada.")
 end
 
 --------------------------------------------------------------------------------
