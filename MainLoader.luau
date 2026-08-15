@@ -985,17 +985,17 @@ function VortexHub:BuildUI()
     screen.DisplayOrder = 9999
     screen.Parent = parentGui
 
-    local logoUrl = "https://raw.githubusercontent.com/MasterPiddy/VortexHub/main/assets/vortexhub_ui_logo.png"
+    local logoUrl = "https://raw.githubusercontent.com/MasterPiddy/VortexHub/main/assets/vortex_logo.png"
     local logoAssetId = nil
 
     pcall(function()
         if writefile and getcustomasset then
-            if not isfile or not isfile("vortexhub_ui_logo.png") then
+            if not isfile or not isfile("vortex_logo.png") then
                 local imageBytes = game:HttpGet(logoUrl)
-                writefile("vortexhub_ui_logo.png", imageBytes)
+                writefile("vortex_logo.png", imageBytes)
             end
-            if isfile and isfile("vortexhub_ui_logo.png") then
-                logoAssetId = getcustomasset("vortexhub_ui_logo.png")
+            if isfile and isfile("vortex_logo.png") then
+                logoAssetId = getcustomasset("vortex_logo.png")
             end
         end
     end)
