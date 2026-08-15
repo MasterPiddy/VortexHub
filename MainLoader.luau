@@ -1002,22 +1002,31 @@ function VortexHub:BuildUI()
 
     local toggleBtn = Instance.new("ImageButton")
     toggleBtn.Name = "VortexLogoButton"
-    toggleBtn.Size = UDim2.new(0, 60, 0, 60)
+    toggleBtn.Size = UDim2.new(0, 51, 0, 51)
     toggleBtn.Position = UDim2.new(0, 20, 0.25, 0)
     toggleBtn.BackgroundColor3 = Color3.fromRGB(15, 12, 28)
     toggleBtn.BackgroundTransparency = 0.1
-    toggleBtn.Image = logoAssetId or logoUrl
-    toggleBtn.ScaleType = Enum.ScaleType.Fit
+    toggleBtn.AutoButtonColor = true
     toggleBtn.Parent = screen
+
+    local logoImg = Instance.new("ImageLabel")
+    logoImg.Name = "LogoImage"
+    logoImg.Size = UDim2.new(1, 2, 1, 2)
+    logoImg.Position = UDim2.new(0.5, 0, 0.5, 0)
+    logoImg.AnchorPoint = Vector2.new(0.5, 0.5)
+    logoImg.BackgroundTransparency = 1
+    logoImg.Image = logoAssetId or logoUrl
+    logoImg.ScaleType = Enum.ScaleType.Fit
+    logoImg.Parent = toggleBtn
 
     local fallbackIcon = Instance.new("TextLabel")
     fallbackIcon.Name = "FallbackIcon"
     fallbackIcon.Size = UDim2.new(1, 0, 1, 0)
     fallbackIcon.BackgroundTransparency = 1
     fallbackIcon.Text = "🌀"
-    fallbackIcon.TextSize = 28
+    fallbackIcon.TextSize = 24
     fallbackIcon.TextColor3 = Color3.fromRGB(240, 200, 255)
-    fallbackIcon.Visible = (logoAssetId == nil and toggleBtn.Image == "")
+    fallbackIcon.Visible = (logoAssetId == nil and logoImg.Image == "")
     fallbackIcon.Parent = toggleBtn
 
     local btnCorner = Instance.new("UICorner")
@@ -1025,7 +1034,7 @@ function VortexHub:BuildUI()
     btnCorner.Parent = toggleBtn
 
     local btnStroke = Instance.new("UIStroke")
-    btnStroke.Thickness = 2.5
+    btnStroke.Thickness = 2.2
     btnStroke.Color = Color3.fromRGB(255, 255, 255)
     btnStroke.Parent = toggleBtn
 
@@ -1125,13 +1134,26 @@ function VortexHub:BuildUI()
     end
 
     local closeBtn = Instance.new("TextButton")
-    closeBtn.Size = UDim2.new(0, 30, 0, 30)
-    closeBtn.Position = UDim2.new(1, -38, 0.5, -15)
-    closeBtn.BackgroundTransparency = 1
-    closeBtn.Text = "✕"
-    closeBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
-    closeBtn.TextSize = 18
+    closeBtn.Size = UDim2.new(0, 28, 0, 28)
+    closeBtn.Position = UDim2.new(1, -38, 0.5, -14)
+    closeBtn.BackgroundColor3 = Color3.fromRGB(45, 18, 25)
+    closeBtn.BackgroundTransparency = 0
+    closeBtn.Text = "X"
+    closeBtn.TextColor3 = Color3.fromRGB(255, 45, 45)
+    closeBtn.Font = Enum.Font.GothamBold
+    closeBtn.TextSize = 14
     closeBtn.Parent = header
+
+    local closeCorner = Instance.new("UICorner")
+    closeCorner.CornerRadius = UDim.new(0, 7)
+    closeCorner.Parent = closeBtn
+
+    local closeStroke = Instance.new("UIStroke")
+    closeStroke.Thickness = 1.2
+    closeStroke.Color = Color3.fromRGB(255, 60, 60)
+    closeStroke.Transparency = 0.2
+    closeStroke.Parent = closeBtn
+
     closeBtn.MouseButton1Click:Connect(function()
         mainFrame.Visible = false
     end)
