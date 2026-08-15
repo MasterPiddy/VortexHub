@@ -985,16 +985,40 @@ function VortexHub:BuildUI()
     screen.DisplayOrder = 9999
     screen.Parent = parentGui
 
-    local toggleBtn = Instance.new("TextButton")
+    local logoUrl = "https://raw.githubusercontent.com/MasterPiddy/VortexHub/main/assets/vortexhub_ui_logo.png"
+    local logoAssetId = nil
+
+    pcall(function()
+        if writefile and getcustomasset then
+            if not isfile or not isfile("vortexhub_ui_logo.png") then
+                local imageBytes = game:HttpGet(logoUrl)
+                writefile("vortexhub_ui_logo.png", imageBytes)
+            end
+            if isfile and isfile("vortexhub_ui_logo.png") then
+                logoAssetId = getcustomasset("vortexhub_ui_logo.png")
+            end
+        end
+    end)
+
+    local toggleBtn = Instance.new("ImageButton")
     toggleBtn.Name = "VortexLogoButton"
     toggleBtn.Size = UDim2.new(0, 60, 0, 60)
     toggleBtn.Position = UDim2.new(0, 20, 0.25, 0)
     toggleBtn.BackgroundColor3 = Color3.fromRGB(15, 12, 28)
     toggleBtn.BackgroundTransparency = 0.1
-    toggleBtn.Text = "🌀"
-    toggleBtn.TextSize = 28
-    toggleBtn.TextColor3 = Color3.fromRGB(240, 200, 255)
+    toggleBtn.Image = logoAssetId or logoUrl
+    toggleBtn.ScaleType = Enum.ScaleType.Fit
     toggleBtn.Parent = screen
+
+    local fallbackIcon = Instance.new("TextLabel")
+    fallbackIcon.Name = "FallbackIcon"
+    fallbackIcon.Size = UDim2.new(1, 0, 1, 0)
+    fallbackIcon.BackgroundTransparency = 1
+    fallbackIcon.Text = "🌀"
+    fallbackIcon.TextSize = 28
+    fallbackIcon.TextColor3 = Color3.fromRGB(240, 200, 255)
+    fallbackIcon.Visible = (logoAssetId == nil and toggleBtn.Image == "")
+    fallbackIcon.Parent = toggleBtn
 
     local btnCorner = Instance.new("UICorner")
     btnCorner.CornerRadius = UDim.new(1, 0)
