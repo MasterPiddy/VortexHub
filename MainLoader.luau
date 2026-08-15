@@ -990,12 +990,10 @@ function VortexHub:BuildUI()
 
     pcall(function()
         if writefile and getcustomasset then
-            if not isfile or not isfile("vortex_logo.png") then
-                local imageBytes = game:HttpGet(logoUrl)
-                writefile("vortex_logo.png", imageBytes)
-            end
-            if isfile and isfile("vortex_logo.png") then
-                logoAssetId = getcustomasset("vortex_logo.png")
+            local imageBytes = game:HttpGet(logoUrl)
+            writefile("vortex_logo_v2.png", imageBytes)
+            if isfile and isfile("vortex_logo_v2.png") then
+                logoAssetId = getcustomasset("vortex_logo_v2.png")
             end
         end
     end)
@@ -1007,17 +1005,26 @@ function VortexHub:BuildUI()
     toggleBtn.BackgroundColor3 = Color3.fromRGB(15, 12, 28)
     toggleBtn.BackgroundTransparency = 0.1
     toggleBtn.AutoButtonColor = true
+    toggleBtn.ClipsDescendants = true
     toggleBtn.Parent = screen
+
+    local btnCorner = Instance.new("UICorner")
+    btnCorner.CornerRadius = UDim.new(1, 0)
+    btnCorner.Parent = toggleBtn
 
     local logoImg = Instance.new("ImageLabel")
     logoImg.Name = "LogoImage"
-    logoImg.Size = UDim2.new(1, 2, 1, 2)
+    logoImg.Size = UDim2.new(1, -2, 1, -2)
     logoImg.Position = UDim2.new(0.5, 0, 0.5, 0)
     logoImg.AnchorPoint = Vector2.new(0.5, 0.5)
     logoImg.BackgroundTransparency = 1
     logoImg.Image = logoAssetId or logoUrl
     logoImg.ScaleType = Enum.ScaleType.Fit
     logoImg.Parent = toggleBtn
+
+    local imgCorner = Instance.new("UICorner")
+    imgCorner.CornerRadius = UDim.new(1, 0)
+    imgCorner.Parent = logoImg
 
     local fallbackIcon = Instance.new("TextLabel")
     fallbackIcon.Name = "FallbackIcon"
@@ -1028,10 +1035,6 @@ function VortexHub:BuildUI()
     fallbackIcon.TextColor3 = Color3.fromRGB(240, 200, 255)
     fallbackIcon.Visible = (logoAssetId == nil and logoImg.Image == "")
     fallbackIcon.Parent = toggleBtn
-
-    local btnCorner = Instance.new("UICorner")
-    btnCorner.CornerRadius = UDim.new(1, 0)
-    btnCorner.Parent = toggleBtn
 
     local btnStroke = Instance.new("UIStroke")
     btnStroke.Thickness = 2.2
